@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   arrayRemove,
   arrayUnion,
@@ -10,12 +10,7 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
-import {
-  deleteObject,
-  getDownloadURL,
-  ref,
-  uploadBytes,
-} from "firebase/storage";
+import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
@@ -32,15 +27,6 @@ GlobalWorkerOptions.workerSrc = pdfWorker;
 const ADMIN_EMAILS = ["lulu212518@gmail.com"];
 const MAX_MAIN_FILE_MB = 30;
 const MAX_COVER_FILE_MB = 8;
-
-const MATERIAL_LABELS = {
-  pdf: "PDF",
-  image: "이미지",
-  hwp: "한글파일",
-  ppt: "PPT",
-  doc: "문서",
-  other: "기타",
-};
 
 function parseHashtags(value) {
   if (!value) return [];
@@ -130,10 +116,6 @@ function getDisplayCoverUrl(entry) {
   return "";
 }
 
-function getFileTypeBadge(entry) {
-  return MATERIAL_LABELS[entry.materialType] || "자료";
-}
-
 function openExternalUrl(url) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
@@ -200,18 +182,10 @@ async function createPdfCoverBlob(pdfFile) {
     viewport,
   }).promise;
 
-  const blob = await new Promise((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", 0.9)
-  );
-
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
   return blob;
 }
 
-/*
-  여기 const css에는
-  네가 기존에 쓰고 있던 css 문자열 전체를 그대로 넣어.
-  지금 네가 보낸 App.jsx의 css 그대로 쓰면 된다.
-*/
 const css = `
   * {
     box-sizing: border-box;
@@ -226,10 +200,10 @@ const css = `
 
   body {
     background:
-      radial-gradient(circle at top left, rgba(212, 191, 153, 0.28), transparent 28%),
-      radial-gradient(circle at bottom right, rgba(58, 76, 110, 0.18), transparent 26%),
-      linear-gradient(180deg, #f8f5ef 0%, #efe8dc 100%);
-    color: #1d2736;
+      radial-gradient(circle at top left, rgba(102, 153, 153, 0.14), transparent 28%),
+      radial-gradient(circle at bottom right, rgba(54, 77, 115, 0.10), transparent 26%),
+      linear-gradient(180deg, #f7f4ee 0%, #efe7dc 100%);
+    color: #182433;
     font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
   }
 
@@ -252,14 +226,14 @@ const css = `
     margin: 0 auto;
     display: flex;
     justify-content: center;
-    gap: 36px;
+    gap: 34px;
     align-items: flex-start;
     flex-wrap: wrap;
   }
 
   .hero-copy {
     width: 360px;
-    padding-top: 26px;
+    padding-top: 20px;
   }
 
   .hero-kicker {
@@ -269,8 +243,8 @@ const css = `
     padding: 8px 14px;
     border-radius: 999px;
     background: rgba(255,255,255,0.72);
-    border: 1px solid rgba(31, 54, 92, 0.12);
-    color: #5b6c86;
+    border: 1px solid rgba(31, 54, 92, 0.10);
+    color: #4f6175;
     font-size: 13px;
     font-weight: 700;
     letter-spacing: 0.04em;
@@ -279,10 +253,16 @@ const css = `
   .hero-title {
     margin: 18px 0 12px;
     font-size: 40px;
-    line-height: 1.14;
+    line-height: 1.15;
     letter-spacing: -0.04em;
     font-weight: 800;
-    color: #1a2740;
+    color: #132234;
+  }
+
+  .hero-description {
+    color: #627080;
+    font-size: 15px;
+    line-height: 1.8;
   }
 
   .feature-list {
@@ -292,34 +272,34 @@ const css = `
   }
 
   .feature-card {
-    padding: 14px 16px;
+    padding: 15px 16px;
     border-radius: 18px;
-    background: rgba(255,255,255,0.68);
+    background: rgba(255,255,255,0.75);
     border: 1px solid rgba(31, 54, 92, 0.08);
-    box-shadow: 0 12px 30px rgba(24, 35, 53, 0.06);
+    box-shadow: 0 12px 30px rgba(24, 35, 53, 0.05);
   }
 
   .feature-card strong {
     display: block;
-    margin-bottom: 4px;
-    color: #24324a;
+    margin-bottom: 5px;
+    color: #1d2e43;
     font-size: 14px;
   }
 
   .feature-card span {
     color: #667487;
     font-size: 13px;
-    line-height: 1.7;
+    line-height: 1.75;
   }
 
   .phone-shell {
-    width: 390px;
+    width: 392px;
     min-height: 740px;
     border-radius: 34px;
-    background: rgba(255,255,255,0.78);
-    border: 1px solid rgba(31, 54, 92, 0.1);
+    background: rgba(255,255,255,0.80);
+    border: 1px solid rgba(31, 54, 92, 0.10);
     box-shadow:
-      0 20px 50px rgba(28, 40, 60, 0.12),
+      0 20px 50px rgba(28, 40, 60, 0.10),
       inset 0 1px 0 rgba(255,255,255,0.65);
     backdrop-filter: blur(18px);
     overflow: hidden;
@@ -334,6 +314,7 @@ const css = `
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 10px;
     margin-bottom: 20px;
   }
 
@@ -347,25 +328,25 @@ const css = `
     width: 38px;
     height: 38px;
     border-radius: 14px;
-    background: linear-gradient(135deg, #1f365c 0%, #2f528d 100%);
+    background: linear-gradient(135deg, #214055 0%, #2f5b63 100%);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 800;
-    box-shadow: 0 10px 20px rgba(31, 54, 92, 0.22);
+    box-shadow: 0 10px 20px rgba(31, 54, 92, 0.18);
   }
 
   .brand-title {
     font-size: 15px;
     font-weight: 800;
-    color: #1f2d45;
+    color: #182738;
     letter-spacing: -0.02em;
   }
 
   .brand-subtitle {
     font-size: 12px;
-    color: #768396;
+    color: #748092;
     margin-top: 2px;
   }
 
@@ -373,13 +354,13 @@ const css = `
     min-width: 66px;
     height: 34px;
     border-radius: 999px;
-    border: 1px solid rgba(31, 54, 92, 0.12);
-    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(31, 54, 92, 0.10);
+    background: rgba(255,255,255,0.90);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 0 12px;
-    color: #55657c;
+    color: #4f6175;
     font-size: 12px;
     font-weight: 700;
   }
@@ -393,14 +374,14 @@ const css = `
     font-size: 28px;
     line-height: 1.22;
     letter-spacing: -0.04em;
-    color: #172338;
+    color: #152233;
   }
 
   .headline-box p {
     margin: 10px 0 0;
-    color: #6a7788;
+    color: #69778a;
     font-size: 14px;
-    line-height: 1.7;
+    line-height: 1.75;
   }
 
   .search-wrap {
@@ -409,8 +390,8 @@ const css = `
     gap: 10px;
     height: 54px;
     border-radius: 18px;
-    border: 1px solid rgba(31, 54, 92, 0.1);
-    background: rgba(248, 246, 242, 0.96);
+    border: 1px solid rgba(31, 54, 92, 0.10);
+    background: rgba(248, 246, 242, 0.98);
     padding: 0 16px;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
   }
@@ -426,8 +407,7 @@ const css = `
 
   .search-wrap input::placeholder,
   .field-input::placeholder,
-  .field-textarea::placeholder,
-  .field-select {
+  .field-textarea::placeholder {
     color: #98a2b1;
   }
 
@@ -445,12 +425,12 @@ const css = `
     height: 110px;
     border: none;
     border-radius: 28px;
-    background: linear-gradient(135deg, #233a63 0%, #2f4f84 65%, #bc9754 100%);
+    background: linear-gradient(135deg, #223a4e 0%, #2f5d62 100%);
     color: white;
     font-size: 34px;
     font-weight: 800;
     letter-spacing: -0.03em;
-    box-shadow: 0 18px 30px rgba(35, 58, 99, 0.24);
+    box-shadow: 0 18px 30px rgba(35, 58, 99, 0.18);
     cursor: pointer;
     transition: transform 0.18s ease, box-shadow 0.18s ease;
     margin-bottom: 24px;
@@ -458,12 +438,12 @@ const css = `
 
   .primary-button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 22px 34px rgba(35, 58, 99, 0.26);
+    box-shadow: 0 22px 34px rgba(35, 58, 99, 0.22);
   }
 
   .section-card {
     border-radius: 28px;
-    background: rgba(249, 247, 243, 0.9);
+    background: rgba(249, 247, 243, 0.92);
     border: 1px solid rgba(31, 54, 92, 0.08);
     padding: 16px;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
@@ -503,14 +483,14 @@ const css = `
     height: 88px;
     border: 1px solid rgba(31, 54, 92, 0.09);
     border-radius: 24px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(245,240,233,0.96));
-    color: #203150;
+    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(244,239,232,0.98));
+    color: #1f3144;
     font-size: 30px;
     font-weight: 800;
     letter-spacing: -0.03em;
     cursor: pointer;
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-    box-shadow: 0 12px 24px rgba(28, 40, 60, 0.07);
+    box-shadow: 0 12px 24px rgba(28, 40, 60, 0.06);
   }
 
   .grade-button:hover,
@@ -519,28 +499,14 @@ const css = `
   .grade-toggle:hover,
   .sort-toggle:hover,
   .stat-chip:hover,
-  .entry-thumb:hover {
+  .entry-thumb:hover,
+  .file-picker-button:hover {
     transform: translateY(-1px);
   }
 
   .grade-button:hover {
-    border-color: rgba(47, 79, 132, 0.28);
-    box-shadow: 0 16px 28px rgba(31, 54, 92, 0.1);
-  }
-
-  .home-note {
-    margin-top: 18px;
-    padding: 14px 16px;
-    border-radius: 18px;
-    background: rgba(255,255,255,0.76);
-    border: 1px solid rgba(31, 54, 92, 0.08);
-    color: #647284;
-    font-size: 13px;
-    line-height: 1.75;
-  }
-
-  .home-search-results {
-    margin-bottom: 22px;
+    border-color: rgba(47, 79, 132, 0.24);
+    box-shadow: 0 16px 28px rgba(31, 54, 92, 0.08);
   }
 
   .page-header-row {
@@ -569,20 +535,34 @@ const css = `
   .footer-button,
   .grade-toggle,
   .sort-toggle,
-  .stat-chip {
+  .stat-chip,
+  .file-picker-button {
     cursor: pointer;
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
   }
 
-  .ghost-button {
+  .ghost-button,
+  .file-picker-button {
     height: 38px;
     border-radius: 999px;
-    border: 1px solid rgba(31, 54, 92, 0.1);
-    background: rgba(255,255,255,0.82);
+    border: 1px solid rgba(31, 54, 92, 0.10);
+    background: rgba(255,255,255,0.86);
     color: #2a3d5f;
     padding: 0 14px;
     font-size: 13px;
     font-weight: 700;
+  }
+
+  .file-picker-button {
+    height: 52px;
+    width: 100%;
+    border-radius: 16px;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(248,246,242,0.98);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
   }
 
   .grade-meta {
@@ -610,18 +590,18 @@ const css = `
   .sort-toggle {
     height: 44px;
     border-radius: 14px;
-    border: 1px solid rgba(31, 54, 92, 0.1);
-    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(31, 54, 92, 0.10);
+    background: rgba(255,255,255,0.90);
     color: #30425f;
     font-weight: 800;
-    box-shadow: 0 8px 18px rgba(28, 40, 60, 0.05);
+    box-shadow: 0 8px 18px rgba(28, 40, 60, 0.04);
   }
 
   .sort-toggle.active {
-    background: linear-gradient(135deg, #223962 0%, #315387 100%);
+    background: linear-gradient(135deg, #223a4e 0%, #2f5d62 100%);
     color: white;
     border: none;
-    box-shadow: 0 14px 24px rgba(35, 58, 99, 0.22);
+    box-shadow: 0 14px 24px rgba(35, 58, 99, 0.16);
   }
 
   .list-wrap {
@@ -656,9 +636,9 @@ const css = `
   .entry-card,
   .detail-card {
     border-radius: 24px;
-    background: rgba(255,255,255,0.78);
+    background: rgba(255,255,255,0.80);
     border: 1px solid rgba(31, 54, 92, 0.08);
-    box-shadow: 0 14px 28px rgba(28, 40, 60, 0.08);
+    box-shadow: 0 14px 28px rgba(28, 40, 60, 0.06);
   }
 
   .empty-card {
@@ -702,7 +682,7 @@ const css = `
     align-items: center;
     justify-content: center;
     background:
-      radial-gradient(circle at top left, rgba(188, 151, 84, 0.2), transparent 30%),
+      radial-gradient(circle at top left, rgba(75, 113, 113, 0.12), transparent 30%),
       linear-gradient(180deg, rgba(244,240,233,1), rgba(233,226,214,1));
     color: #24324a;
     flex-direction: column;
@@ -715,14 +695,14 @@ const css = `
     width: 64px;
     height: 64px;
     border-radius: 22px;
-    background: linear-gradient(135deg, #223962 0%, #315387 100%);
+    background: linear-gradient(135deg, #223a4e 0%, #2f5d62 100%);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 800;
-    font-size: 20px;
-    box-shadow: 0 12px 24px rgba(35, 58, 99, 0.18);
+    font-size: 14px;
+    box-shadow: 0 12px 24px rgba(35, 58, 99, 0.14);
   }
 
   .placeholder-title {
@@ -742,7 +722,7 @@ const css = `
     position: absolute;
     top: 12px;
     left: 12px;
-    background: rgba(18, 29, 47, 0.76);
+    background: rgba(18, 29, 47, 0.70);
     color: white;
     font-size: 12px;
     font-weight: 700;
@@ -755,7 +735,7 @@ const css = `
     margin-top: 10px;
     padding: 14px 14px 12px;
     border-radius: 18px;
-    background: linear-gradient(180deg, rgba(248,246,242,0.96), rgba(242,236,227,0.96));
+    background: linear-gradient(180deg, rgba(248,246,242,0.98), rgba(242,236,227,0.98));
     color: #23324b;
     font-size: 15px;
     line-height: 1.7;
@@ -765,7 +745,7 @@ const css = `
   .entry-caption strong {
     display: block;
     font-size: 13px;
-    color: #8a7960;
+    color: #7c6b58;
     font-weight: 800;
     margin-bottom: 4px;
     letter-spacing: 0.03em;
@@ -818,15 +798,15 @@ const css = `
     min-height: 36px;
     padding: 0 12px;
     border-radius: 999px;
-    border: 1px solid rgba(31, 54, 92, 0.1);
-    background: rgba(255,255,255,0.84);
+    border: 1px solid rgba(31, 54, 92, 0.10);
+    background: rgba(255,255,255,0.86);
     color: #32445f;
     font-size: 12px;
     font-weight: 800;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 8px 16px rgba(28, 40, 60, 0.05);
+    box-shadow: 0 8px 16px rgba(28, 40, 60, 0.04);
   }
 
   .stat-chip.like-active {
@@ -848,22 +828,22 @@ const css = `
     min-width: 100px;
     height: 48px;
     border-radius: 16px;
-    border: 1px solid rgba(31, 54, 92, 0.1);
-    background: rgba(255,255,255,0.84);
+    border: 1px solid rgba(31, 54, 92, 0.10);
+    background: rgba(255,255,255,0.86);
     color: #233450;
     font-weight: 700;
-    box-shadow: 0 10px 18px rgba(28, 40, 60, 0.05);
+    box-shadow: 0 10px 18px rgba(28, 40, 60, 0.04);
   }
 
   .footer-button.primary {
-    background: linear-gradient(135deg, #223962 0%, #315387 100%);
+    background: linear-gradient(135deg, #223a4e 0%, #2f5d62 100%);
     color: white;
     border: none;
-    box-shadow: 0 16px 26px rgba(35, 58, 99, 0.22);
+    box-shadow: 0 16px 26px rgba(35, 58, 99, 0.16);
   }
 
   .footer-button.danger {
-    background: rgba(185, 57, 57, 0.1);
+    background: rgba(185, 57, 57, 0.10);
     color: #a13838;
     border-color: rgba(185, 57, 57, 0.18);
   }
@@ -884,18 +864,18 @@ const css = `
   .grade-toggle {
     height: 52px;
     border-radius: 16px;
-    border: 1px solid rgba(31, 54, 92, 0.1);
-    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(31, 54, 92, 0.10);
+    background: rgba(255,255,255,0.90);
     color: #30425f;
     font-weight: 800;
-    box-shadow: 0 8px 18px rgba(28, 40, 60, 0.05);
+    box-shadow: 0 8px 18px rgba(28, 40, 60, 0.04);
   }
 
   .grade-toggle.active {
-    background: linear-gradient(135deg, #223962 0%, #315387 100%);
+    background: linear-gradient(135deg, #223a4e 0%, #2f5d62 100%);
     color: white;
     border: none;
-    box-shadow: 0 14px 24px rgba(35, 58, 99, 0.22);
+    box-shadow: 0 14px 24px rgba(35, 58, 99, 0.16);
   }
 
   .field-group {
@@ -912,18 +892,16 @@ const css = `
   }
 
   .field-input,
-  .field-textarea,
-  .field-select {
+  .field-textarea {
     width: 100%;
-    border: 1px solid rgba(31, 54, 92, 0.1);
-    background: rgba(248,246,242,0.96);
+    border: 1px solid rgba(31, 54, 92, 0.10);
+    background: rgba(248,246,242,0.98);
     color: #22324d;
     outline: none;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
   }
 
-  .field-input,
-  .field-select {
+  .field-input {
     height: 54px;
     padding: 0 15px;
     border-radius: 16px;
@@ -935,6 +913,10 @@ const css = `
     border-radius: 18px;
     resize: none;
     line-height: 1.6;
+  }
+
+  .hidden-file-input {
+    display: none;
   }
 
   .error-box {
@@ -949,10 +931,10 @@ const css = `
   }
 
   .upload-info {
-    margin-top: 16px;
+    margin-top: 12px;
     padding: 14px 15px;
     border-radius: 18px;
-    background: rgba(255,255,255,0.7);
+    background: rgba(255,255,255,0.72);
     border: 1px solid rgba(31, 54, 92, 0.08);
     color: #69778b;
     font-size: 13px;
@@ -982,7 +964,6 @@ const css = `
   .detail-kicker {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
     min-height: 34px;
     padding: 0 12px;
     border-radius: 999px;
@@ -1018,7 +999,7 @@ const css = `
   .detail-meta-item {
     padding: 12px 13px;
     border-radius: 16px;
-    background: rgba(248,246,242,0.96);
+    background: rgba(248,246,242,0.98);
     border: 1px solid rgba(31, 54, 92, 0.08);
   }
 
@@ -1042,7 +1023,7 @@ const css = `
     margin-top: 18px;
     padding: 14px 15px;
     border-radius: 18px;
-    background: rgba(248,246,242,0.96);
+    background: rgba(248,246,242,0.98);
     border: 1px solid rgba(31, 54, 92, 0.08);
   }
 
@@ -1061,13 +1042,6 @@ const css = `
     line-height: 1.8;
     white-space: pre-wrap;
     word-break: break-word;
-  }
-
-  .helper-text {
-    margin-top: 8px;
-    color: #7d8898;
-    font-size: 12px;
-    line-height: 1.7;
   }
 
   @media (max-width: 980px) {
@@ -1140,18 +1114,17 @@ export default function App() {
   const [topic, setTopic] = useState("");
   const [description, setDescription] = useState("");
   const [hashtagsText, setHashtagsText] = useState("");
-  const [materialType, setMaterialType] = useState("pdf");
   const [uploadFile, setUploadFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  const fileInputRef = useRef(null);
+  const coverInputRef = useRef(null);
 
   useEffect(() => {
     const unsubscribe = watchAuth((user) => {
       setCurrentUser(user || null);
       setAuthReady(true);
-      if (user) {
-        console.log("current anonymous uid:", user.uid);
-      }
     });
 
     ensureAnonymousAuth().catch((error) => {
@@ -1167,9 +1140,7 @@ export default function App() {
     const unsubscribe = onSnapshot(
       collection(db, "entries"),
       (snapshot) => {
-        const next = snapshot.docs.map((item) =>
-          normalizeEntry({ id: item.id, ...item.data() })
-        );
+        const next = snapshot.docs.map((item) => normalizeEntry({ id: item.id, ...item.data() }));
         setEntries(next);
       },
       (error) => {
@@ -1196,7 +1167,6 @@ export default function App() {
         entry.name,
         entry.topic,
         entry.description,
-        entry.materialType,
         ...(entry.hashtags || []),
       ]
         .join(" ")
@@ -1222,7 +1192,6 @@ export default function App() {
           entry.name,
           entry.topic,
           entry.description,
-          entry.materialType,
           ...(entry.hashtags || []),
         ]
           .join(" ")
@@ -1234,15 +1203,41 @@ export default function App() {
     return sortEntries(filtered, gradeSortMap[selectedGrade] || "latest");
   }, [entries, selectedGrade, gradeSearchText, gradeSortMap]);
 
+  const isAdminUser = (user) => {
+    if (!user) return false;
+    return !!user.email && ADMIN_EMAILS.includes(user.email);
+  };
+
   const isLikedByCurrentUser = (entry) => {
     if (!currentUser) return false;
     return (entry.likedBy || []).includes(currentUser.uid);
   };
 
- const canDeleteEntry = (entry) => {
-  if (!currentUser) return false;
-  return currentUser.uid === entry.authorUid || isAdminUser(currentUser);
-};
+  const canDeleteEntry = (entry) => {
+    if (!currentUser) return false;
+    return currentUser.uid === entry.authorUid || isAdminUser(currentUser);
+  };
+
+  const handleAdminLogin = async () => {
+    try {
+      setErrorMessage("");
+      await signInAdminWithGoogle();
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("관리자 로그인 중 문제가 생겼어요.");
+    }
+  };
+
+  const handleAdminLogout = async () => {
+    try {
+      setErrorMessage("");
+      await signOutUser();
+      await ensureAnonymousAuth();
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("로그아웃 중 문제가 생겼어요.");
+    }
+  };
 
   const resetUploadForm = () => {
     setUploadGrade(selectedGrade || 1);
@@ -1251,11 +1246,12 @@ export default function App() {
     setTopic("");
     setDescription("");
     setHashtagsText("");
-    setMaterialType("pdf");
     setUploadFile(null);
     setCoverFile(null);
     setErrorMessage("");
     setUploadStatus("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (coverInputRef.current) coverInputRef.current.value = "";
   };
 
   const goToHome = () => {
@@ -1290,11 +1286,12 @@ export default function App() {
     setTopic("");
     setDescription("");
     setHashtagsText("");
-    setMaterialType("pdf");
     setUploadFile(null);
     setCoverFile(null);
     setErrorMessage("");
     setUploadStatus("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (coverInputRef.current) coverInputRef.current.value = "";
   };
 
   const openDetailPage = async (entryId, source) => {
@@ -1338,14 +1335,10 @@ export default function App() {
     if (!confirmed) return;
 
     try {
-      const paths = Array.from(
-        new Set([entry.filePath, entry.coverPath].filter(Boolean))
-      );
+      const paths = Array.from(new Set([entry.filePath, entry.coverPath].filter(Boolean)));
 
       if (paths.length) {
-        await Promise.allSettled(
-          paths.map((path) => deleteObject(ref(storage, path)))
-        );
+        await Promise.allSettled(paths.map((path) => deleteObject(ref(storage, path))));
       }
 
       await deleteDoc(doc(db, "entries", entry.id));
@@ -1401,16 +1394,15 @@ export default function App() {
     try {
       setIsSaving(true);
       setErrorMessage("");
-      setUploadStatus("원본 파일 업로드 준비 중...");
+      setUploadStatus("업로드 중...");
 
       const entryRef = doc(collection(db, "entries"));
-      const finalType = materialType === "other" ? inferMaterialType(uploadFile) : materialType;
+      const finalType = inferMaterialType(uploadFile);
       const basePath = `entries/${entryRef.id}`;
 
       const mainFilePath = `${basePath}/main_${Date.now()}_${sanitizeFileName(uploadFile.name)}`;
       const mainFileRef = ref(storage, mainFilePath);
 
-      setUploadStatus("원본 파일 업로드 중...");
       await uploadBytes(mainFileRef, uploadFile, {
         contentType: uploadFile.type || undefined,
         customMetadata: {
@@ -1428,11 +1420,7 @@ export default function App() {
       let finalCoverPath = "";
 
       if (coverFile) {
-        setUploadStatus("대표 이미지 업로드 중...");
-
-        const coverPath = `${basePath}/cover_${Date.now()}_${sanitizeFileName(
-          coverFile.name
-        )}`;
+        const coverPath = `${basePath}/cover_${Date.now()}_${sanitizeFileName(coverFile.name)}`;
         const coverRef = ref(storage, coverPath);
 
         await uploadBytes(coverRef, coverFile, {
@@ -1453,8 +1441,6 @@ export default function App() {
         finalCoverPath = mainFilePath;
       } else if (finalType === "pdf") {
         try {
-          setUploadStatus("PDF 첫 페이지 표지 생성 중...");
-
           const pdfCoverBlob = await createPdfCoverBlob(uploadFile);
           if (pdfCoverBlob) {
             const autoCoverPath = `${basePath}/auto_cover_first_page.jpg`;
@@ -1478,8 +1464,6 @@ export default function App() {
           console.warn("PDF 첫 페이지 표지 생성 실패:", error);
         }
       }
-
-      setUploadStatus("메타데이터 저장 중...");
 
       await setDoc(entryRef, {
         grade: Number(uploadGrade),
@@ -1509,12 +1493,10 @@ export default function App() {
       console.error(error);
 
       if (uploadedPaths.length) {
-        await Promise.allSettled(
-          uploadedPaths.map((path) => deleteObject(ref(storage, path)))
-        );
+        await Promise.allSettled(uploadedPaths.map((path) => deleteObject(ref(storage, path))));
       }
 
-      setErrorMessage("자료 등록 중 문제가 생겼어요. Auth, Firestore, Storage 규칙을 다시 확인해 주세요.");
+      setErrorMessage("자료 등록 중 문제가 생겼어요. 설정을 다시 확인해 주세요.");
     } finally {
       setIsSaving(false);
       setUploadStatus("");
@@ -1561,34 +1543,25 @@ export default function App() {
               <img src={getDisplayCoverUrl(entry)} alt={`${entry.name} 표지`} />
             ) : (
               <div className="entry-thumb-placeholder">
-                <div className="placeholder-icon">{getFileTypeBadge(entry)}</div>
+                <div className="placeholder-icon">FILE</div>
                 <div className="placeholder-title">{entry.topic}</div>
-                <div className="placeholder-subtitle">
-                  대표 이미지가 없어서 기본 표지를 보여주고 있어요.
-                </div>
+                <div className="placeholder-subtitle">대표 이미지가 없으면 기본 표지가 표시됩니다.</div>
               </div>
             )}
             <div className="entry-overlay">상세 보기</div>
           </button>
 
           <div className="entry-caption">
-            <strong>
-              {showGrade
-                ? "학년 · 학번 · 이름 · 탐구주제"
-                : "학번 · 이름 · 탐구주제"}
-            </strong>
-            {showGrade
-              ? `${entry.grade}학년 · ${formatStudentLabel(entry)}`
-              : formatStudentLabel(entry)}
+            <strong>{showGrade ? "학년 · 학번 · 이름 · 탐구주제" : "학번 · 이름 · 탐구주제"}</strong>
+            {showGrade ? `${entry.grade}학년 · ${formatStudentLabel(entry)}` : formatStudentLabel(entry)}
 
-            <div className="tag-row">
-              <span className="tag-chip">{getFileTypeBadge(entry)}</span>
-              {entry.fileName ? <span className="tag-chip">{entry.fileName}</span> : null}
-            </div>
-
-            {entry.description ? (
-              <div className="entry-description">{entry.description}</div>
+            {entry.fileName ? (
+              <div className="tag-row">
+                <span className="tag-chip">{entry.fileName}</span>
+              </div>
             ) : null}
+
+            {entry.description ? <div className="entry-description">{entry.description}</div> : null}
 
             {entry.hashtags?.length ? (
               <div className="tag-row">
@@ -1621,44 +1594,49 @@ export default function App() {
     </div>
   );
 
+  const renderAdminButtons = (showUploadButton = false) => (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+      {isAdminUser(currentUser) ? (
+        <>
+          <div className="grade-pill">관리자</div>
+          <button className="ghost-button" onClick={handleAdminLogout}>
+            로그아웃
+          </button>
+        </>
+      ) : (
+        <button className="ghost-button" onClick={handleAdminLogin}>
+          관리자 로그인
+        </button>
+      )}
+      {showUploadButton ? (
+        <button className="ghost-button" onClick={openUploadPage}>
+          업로드
+        </button>
+      ) : null}
+    </div>
+  );
+
   const renderHome = () => (
     <div className="phone-shell">
       <div className="phone-inner">
         <div className="topbar">
-  <div className="brand-group">
-    <div className="brand-mark">A</div>
-    <div>
-      <div className="brand-title">Achievement Archive</div>
-      <div className="brand-subtitle">탐구 · 실험 · 제작 기록 공유</div>
-    </div>
-  </div>
-
-  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-    {isAdminUser(currentUser) ? (
-      <>
-        <div className="grade-pill">관리자</div>
-        <button className="ghost-button" onClick={handleAdminLogout}>
-          로그아웃
-        </button>
-      </>
-    ) : (
-      <button className="ghost-button" onClick={handleAdminLogin}>
-        관리자 로그인
-      </button>
-    )}
-  </div>
-</div>
+          <div className="brand-group">
+            <div className="brand-mark">A</div>
+            <div>
+              <div className="brand-title">Achievement Archive</div>
+              <div className="brand-subtitle">탐구 자료 공유 공간</div>
+            </div>
+          </div>
+          {renderAdminButtons(false)}
+        </div>
 
         <div className="headline-box">
           <h2>
-            KSHS의 탐구 기록을
+            강원과학고의 탐구 자료를
             <br />
-            한곳에 모아보는 아카이브
+            함께 모아보는 아카이브
           </h2>
-          <p>
-            학년별 자료를 정리해서 보고, 홈 화면에서는 1학년부터 3학년까지 전체 자료를
-            통합 검색할 수 있도록 구성했습니다.
-          </p>
+          <p>학년별로 자료를 나눠 보고, 홈에서는 전체 자료를 한 번에 검색할 수 있어요.</p>
         </div>
 
         <div className="search-wrap home-search">
@@ -1675,9 +1653,7 @@ export default function App() {
             <div className="page-header-row">
               <div>
                 <div className="page-title">통합 검색 결과</div>
-                <div className="page-subtitle">
-                  홈 화면에서는 1학년, 2학년, 3학년 자료를 구분 없이 모두 보여줍니다.
-                </div>
+                <div className="page-subtitle">1학년부터 3학년까지 전체 자료를 함께 보여줍니다.</div>
               </div>
             </div>
 
@@ -1707,9 +1683,7 @@ export default function App() {
 
         <div className="section-card">
           <div className="section-label">Browse by Grade</div>
-          <div className="section-subtitle">
-            학년별로 자료를 나눠 보고, 각 학년 페이지에서는 원하는 정렬순으로 확인할 수 있습니다.
-          </div>
+          <div className="section-subtitle">학년별로 자료를 나눠 보고 원하는 기록을 빠르게 찾을 수 있습니다.</div>
 
           <div style={{ marginTop: 14 }}>
             <div className="grade-grid one">
@@ -1728,11 +1702,6 @@ export default function App() {
             </div>
           </div>
         </div>
-
-        <div className="home-note">
-          학생이 직접 파일을 업로드하면 원본 파일은 Firebase Storage에 저장되고,
-          제목·설명·해시태그 같은 정보는 Firestore에 저장됩니다.
-        </div>
       </div>
     </div>
   );
@@ -1741,40 +1710,20 @@ export default function App() {
     <div className="phone-shell">
       <div className="phone-inner">
         <div className="topbar">
-  <div className="brand-group">
-    <div className="brand-mark">A</div>
-    <div>
-      <div className="brand-title">Achievement Archive</div>
-      <div className="brand-subtitle">{selectedGrade}학년 아카이브</div>
-    </div>
-  </div>
-
-  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-    {isAdminUser(currentUser) ? (
-      <>
-        <div className="grade-pill">관리자</div>
-        <button className="ghost-button" onClick={handleAdminLogout}>
-          로그아웃
-        </button>
-      </>
-    ) : (
-      <button className="ghost-button" onClick={handleAdminLogin}>
-        관리자 로그인
-      </button>
-    )}
-
-    <button className="ghost-button" onClick={openUploadPage}>
-      업로드
-    </button>
-  </div>
-</div>
+          <div className="brand-group">
+            <div className="brand-mark">A</div>
+            <div>
+              <div className="brand-title">Achievement Archive</div>
+              <div className="brand-subtitle">{selectedGrade}학년 아카이브</div>
+            </div>
+          </div>
+          {renderAdminButtons(true)}
+        </div>
 
         <div className="page-header-row">
           <div>
             <div className="page-title">{selectedGrade}학년 자료 모음</div>
-            <div className="page-subtitle">
-              해당 학년 자료만 검색 결과에 표시됩니다.
-            </div>
+            <div className="page-subtitle">해당 학년 자료만 검색 결과에 표시됩니다.</div>
           </div>
         </div>
 
@@ -1841,9 +1790,7 @@ export default function App() {
 
         <div className="headline-box">
           <h2>성과 자료 등록</h2>
-          <p>
-            학번, 이름, 탐구주제, 설명을 입력하고 원본 파일을 올리면 목록 화면에 바로 반영됩니다.
-          </p>
+          <p>학번, 이름, 탐구주제, 설명을 입력하고 파일을 올리면 목록에 바로 반영됩니다.</p>
         </div>
 
         <div className="field-group">
@@ -1860,22 +1807,6 @@ export default function App() {
               </button>
             ))}
           </div>
-        </div>
-
-        <div className="field-group">
-          <label className="field-label">자료 형식</label>
-          <select
-            className="field-select"
-            value={materialType}
-            onChange={(e) => setMaterialType(e.target.value)}
-          >
-            <option value="pdf">PDF</option>
-            <option value="image">이미지</option>
-            <option value="hwp">한글파일(HWP/HWPX)</option>
-            <option value="ppt">발표자료(PPT/PPTX)</option>
-            <option value="doc">문서(DOC/DOCX)</option>
-            <option value="other">기타</option>
-          </select>
         </div>
 
         <div className="field-group">
@@ -1929,62 +1860,39 @@ export default function App() {
         </div>
 
         <div className="field-group">
-          <label className="field-label">원본 파일 업로드</label>
+          <label className="field-label">원본 파일</label>
           <input
-            className="field-input"
-            style={{ paddingTop: 14, paddingBottom: 14, height: "auto" }}
+            ref={fileInputRef}
+            className="hidden-file-input"
             type="file"
-            accept={getAcceptByMaterialType(materialType)}
-            onChange={(e) => {
-              const file = e.target.files?.[0] || null;
-              setUploadFile(file);
-              if (materialType === "other" && file) {
-                setMaterialType(inferMaterialType(file));
-              }
-            }}
+            accept=".pdf,.hwp,.hwpx,.ppt,.pptx,.doc,.docx,image/*"
+            onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
           />
-          <div className="helper-text">
-            권장 최대 용량: {MAX_MAIN_FILE_MB}MB · 학생이 실제로 내려받을 원본 파일입니다.
-          </div>
-
+          <button type="button" className="file-picker-button" onClick={() => fileInputRef.current?.click()}>
+            파일 선택
+          </button>
           <div className="upload-info">
-            {uploadFile
-              ? `선택된 파일: ${uploadFile.name} (${formatFileSize(uploadFile.size)})`
-              : "아직 선택된 원본 파일이 없어요."}
+            {uploadFile ? `${uploadFile.name} (${formatFileSize(uploadFile.size)})` : "선택된 파일 없음"}
           </div>
         </div>
 
         <div className="field-group">
-          <label className="field-label">표지 이미지 업로드 (선택)</label>
+          <label className="field-label">표지 이미지 (선택)</label>
           <input
-            className="field-input"
-            style={{ paddingTop: 14, paddingBottom: 14, height: "auto" }}
+            ref={coverInputRef}
+            className="hidden-file-input"
             type="file"
             accept="image/*"
-            onChange={(e) => {
-              const file = e.target.files?.[0] || null;
-              setCoverFile(file);
-            }}
+            onChange={(e) => setCoverFile(e.target.files?.[0] || null)}
           />
-          <div className="helper-text">
-            PDF를 올리고 표지를 따로 안 넣으면 첫 페이지를 자동으로 표지 이미지로 만듭니다.
-            표지 이미지를 따로 넣으면 그 이미지가 우선합니다.
-          </div>
-
-          <div className="upload-info">
-            {coverFile
-              ? `선택된 표지: ${coverFile.name} (${formatFileSize(coverFile.size)})`
-              : "표지 이미지를 안 넣으면 이미지 파일은 원본이 표지가 되고, PDF는 첫 페이지가 자동 표지로 들어갑니다."}
-          </div>
+          <button type="button" className="file-picker-button" onClick={() => coverInputRef.current?.click()}>
+            표지 이미지 선택
+          </button>
+          <div className="upload-info">{coverFile ? coverFile.name : "선택된 파일 없음"}</div>
         </div>
 
         {uploadStatus ? <div className="upload-info">{uploadStatus}</div> : null}
         {errorMessage ? <div className="error-box">{errorMessage}</div> : null}
-
-        <div className="upload-info">
-          이 버전은 원본 파일을 직접 저장합니다.
-          작성자는 자기 자료를 삭제할 수 있고, 관리자 UID를 가진 운영자는 모든 자료를 삭제할 수 있습니다.
-        </div>
 
         <div className="footer-actions">
           <button
@@ -2000,12 +1908,12 @@ export default function App() {
             뒤로가기
           </button>
           <button
-  className="footer-button primary"
-  onClick={handleSubmit}
-  disabled={isSaving || !authReady || !currentUser}
->
-  {isSaving ? "등록 중" : !authReady || !currentUser ? "사용자 준비 중..." : "확인"}
-</button>
+            className="footer-button primary"
+            onClick={handleSubmit}
+            disabled={isSaving || !authReady || !currentUser}
+          >
+            {isSaving ? "등록 중" : !authReady || !currentUser ? "사용자 준비 중..." : "확인"}
+          </button>
         </div>
       </div>
     </div>
@@ -2038,26 +1946,23 @@ export default function App() {
       <div className="phone-shell">
         <div className="phone-inner">
           <div className="topbar">
-  <div className="brand-group">
-    <div className="brand-mark">A</div>
-    <div>
-      <div className="brand-title">Achievement Archive</div>
-      <div className="brand-subtitle">상세 보기</div>
-    </div>
-  </div>
-
-  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-    {isAdminUser(currentUser) ? <div className="grade-pill">관리자</div> : null}
-    <div className="grade-pill">상세</div>
-  </div>
-</div>
+            <div className="brand-group">
+              <div className="brand-mark">A</div>
+              <div>
+                <div className="brand-title">Achievement Archive</div>
+                <div className="brand-subtitle">상세 보기</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {isAdminUser(currentUser) ? <div className="grade-pill">관리자</div> : null}
+              <div className="grade-pill">상세</div>
+            </div>
+          </div>
 
           <div className="page-header-row">
             <div>
               <div className="page-title">탐구 상세 정보</div>
-              <div className="page-subtitle">
-                설명, 해시태그, 좋아요, 조회수, 원본 파일 다운로드를 확인할 수 있습니다.
-              </div>
+              <div className="page-subtitle">설명, 해시태그, 좋아요, 조회수, 원본 파일 다운로드를 확인할 수 있습니다.</div>
             </div>
           </div>
 
@@ -2065,26 +1970,18 @@ export default function App() {
             <div className="detail-card">
               <div className="detail-image-wrap">
                 {coverUrl ? (
-                  <img
-                    className="detail-image"
-                    src={coverUrl}
-                    alt={`${selectedEntry.name} 표지`}
-                  />
+                  <img className="detail-image" src={coverUrl} alt={`${selectedEntry.name} 표지`} />
                 ) : (
                   <div className="detail-image-placeholder">
-                    <div className="placeholder-icon">{getFileTypeBadge(selectedEntry)}</div>
+                    <div className="placeholder-icon">FILE</div>
                     <div className="placeholder-title">{selectedEntry.topic}</div>
-                    <div className="placeholder-subtitle">
-                      대표 이미지가 없어 기본 표지를 표시하고 있어요.
-                    </div>
+                    <div className="placeholder-subtitle">대표 이미지가 없으면 기본 표지가 표시됩니다.</div>
                   </div>
                 )}
               </div>
 
               <div className="detail-body">
-                <div className="detail-kicker">
-                  {selectedEntry.grade}학년 · {getFileTypeBadge(selectedEntry)}
-                </div>
+                <div className="detail-kicker">{selectedEntry.grade}학년</div>
 
                 <h3 className="detail-title">{selectedEntry.topic}</h3>
                 <div className="detail-author">
@@ -2105,16 +2002,8 @@ export default function App() {
                     <span>{selectedEntry.views}회</span>
                   </div>
                   <div className="detail-meta-item">
-                    <strong>자료 형식</strong>
-                    <span>{getFileTypeBadge(selectedEntry)}</span>
-                  </div>
-                  <div className="detail-meta-item">
                     <strong>파일 이름</strong>
                     <span>{selectedEntry.fileName || "-"}</span>
-                  </div>
-                  <div className="detail-meta-item">
-                    <strong>파일 크기</strong>
-                    <span>{formatFileSize(selectedEntry.fileSize)}</span>
                   </div>
                 </div>
 
@@ -2153,18 +2042,12 @@ export default function App() {
               ♥ {selectedEntry.likedBy?.length || 0}
             </button>
 
-            <button
-              className="footer-button primary"
-              onClick={() => openExternalUrl(selectedEntry.fileUrl)}
-            >
+            <button className="footer-button primary" onClick={() => openExternalUrl(selectedEntry.fileUrl)}>
               자료 다운로드
             </button>
 
             {deletable ? (
-              <button
-                className="footer-button danger"
-                onClick={() => deleteEntry(selectedEntry)}
-              >
+              <button className="footer-button danger" onClick={() => deleteEntry(selectedEntry)}>
                 삭제
               </button>
             ) : null}
@@ -2184,31 +2067,29 @@ export default function App() {
             <div className="hero-kicker">KSHS RESEARCH ARCHIVE</div>
 
             <h1 className="hero-title">
-              강원과학고의 탐구 결과를
+              강원과학고 학생들의 탐구를
               <br />
-              한눈에 모아보는 연구 아카이브
+              쉽고 편하게 모아보는 아카이브
             </h1>
+
+            <div className="hero-description">
+              강원과학고 학생들이 만든 탐구 자료를 함께 보고, 찾고, 공유할 수 있도록 정리한 공간입니다.
+            </div>
 
             <div className="feature-list">
               <div className="feature-card">
-                <strong>학년별 탐색 + 홈 통합 검색</strong>
-                <span>
-                  1학년, 2학년, 3학년 자료를 각각 나눠서 볼 수 있고, 홈 화면에서는 학년 구분 없이 전체 자료를 한 번에 검색할 수 있습니다.
-                </span>
+                <strong>학년별 탐색 + 통합 검색</strong>
+                <span>1학년, 2학년, 3학년 자료를 나눠서 볼 수 있고, 홈에서는 전체 자료를 한 번에 찾아볼 수 있습니다.</span>
               </div>
 
               <div className="feature-card">
-                <strong>파일 직접 업로드 + 표지 자동 처리</strong>
-                <span>
-                  원본 파일은 Storage에 저장되고, 이미지 파일은 그대로 표지가 되며, PDF는 표지를 따로 넣지 않으면 첫 페이지가 자동 표지로 생성됩니다.
-                </span>
+                <strong>학기말 인기 자료 선정</strong>
+                <span>학기말마다 학생 투표를 통해 우수 자료를 선정하고, 1등·2등·3등에게 작은 상품을 전달하는 방식으로 공유를 더 즐겁게 이어갈 수 있습니다.</span>
               </div>
 
               <div className="feature-card">
-                <strong>작성자 삭제 + 관리자 전체 삭제</strong>
-                <span>
-                  작성자는 자기 자료만 삭제할 수 있고, 관리자 UID를 설정한 운영자는 모든 자료를 관리할 수 있습니다.
-                </span>
+                <strong>문의 및 오류 제보</strong>
+                <span>이 페이지는 2101 강동헌이 제작했습니다. 사용 중 문제가 생기거나 수정이 필요하면 직접 찾아와 알려주면 빠르게 반영하겠습니다.</span>
               </div>
             </div>
           </div>
