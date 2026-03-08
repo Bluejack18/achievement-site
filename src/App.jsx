@@ -425,26 +425,25 @@ const css = `
     margin-bottom: 18px;
   }
 
-  .primary-button {
-    width: 100%;
-    height: 110px;
-    border: none;
-    border-radius: 28px;
-    background: linear-gradient(135deg, #223a4e 0%, #2f5d62 100%);
-    color: white;
-    font-size: 34px;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    box-shadow: 0 18px 30px rgba(35, 58, 99, 0.18);
-    cursor: pointer;
-    transition: transform 0.18s ease, box-shadow 0.18s ease;
-    margin-bottom: 24px;
-  }
+ .primary-button {
+  width: 100%;
+  height: 110px;
+  border: none;
+  border-radius: 28px;
+  background: linear-gradient(135deg, #314f8a 0%, #4875b8 45%, #86a9da 100%);
+  color: white;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  box-shadow: 0 18px 30px rgba(50, 90, 150, 0.25);
+}
+}
 
-  .primary-button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 22px 34px rgba(35, 58, 99, 0.22);
-  }
+.primary-button:hover {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 24px 40px rgba(40, 79, 119, 0.28);
+  filter: brightness(1.05);
+}
 
   .section-card {
     border-radius: 28px;
@@ -485,19 +484,18 @@ const css = `
     grid-template-columns: 1fr 1fr;
   }
 
-  .grade-button {
-    height: 88px;
-    border: 1px solid rgba(31, 54, 92, 0.09);
-    border-radius: 24px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(244,239,232,0.98));
-    color: #1f3144;
-    font-size: 30px;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    cursor: pointer;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-    box-shadow: 0 12px 24px rgba(28, 40, 60, 0.06);
-  }
+ .grade-button {
+  height: 88px;
+  border: none;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #355c99 0%, #5a86c8 55%, #98b9e6 100%);
+  color: white;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  box-shadow: 0 12px 24px rgba(50, 90, 150, 0.18);
+}
+}
 
   .grade-button:hover,
   .ghost-button:hover,
@@ -511,9 +509,10 @@ const css = `
   }
 
   .grade-button:hover {
-    border-color: rgba(47, 79, 132, 0.24);
-    box-shadow: 0 16px 28px rgba(31, 54, 92, 0.08);
-  }
+  transform: translateY(-2px);
+  filter: brightness(1.06);
+  box-shadow: 0 16px 28px rgba(28, 40, 60, 0.18);
+}
 
   .page-header-row {
     display: flex;
@@ -605,11 +604,11 @@ const css = `
   }
 
   .sort-toggle.active {
-    background: linear-gradient(135deg, #223a4e 0%, #2f5d62 100%);
-    color: white;
-    border: none;
-    box-shadow: 0 14px 24px rgba(35, 58, 99, 0.16);
-  }
+  background: linear-gradient(135deg, #284f77 0%, #3f6fa8 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 14px 24px rgba(40, 79, 119, 0.18);
+}
 
   .list-wrap {
     height: 560px;
@@ -700,18 +699,18 @@ const css = `
   }
 
   .placeholder-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 22px;
-    background: linear-gradient(135deg, #223a4e 0%, #2f5d62 100%);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 800;
-    font-size: 14px;
-    box-shadow: 0 12px 24px rgba(35, 58, 99, 0.14);
-  }
+  width: 64px;
+  height: 64px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #284f77 0%, #3f6fa8 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 14px;
+  box-shadow: 0 12px 24px rgba(40, 79, 119, 0.16);
+}
 
   .placeholder-title {
     font-size: 16px;
@@ -845,12 +844,12 @@ const css = `
     box-shadow: 0 10px 18px rgba(28, 40, 60, 0.04);
   }
 
-  .footer-button.primary {
-    background: linear-gradient(135deg, #223a4e 0%, #2f5d62 100%);
-    color: white;
-    border: none;
-    box-shadow: 0 16px 26px rgba(35, 58, 99, 0.16);
-  }
+ .footer-button.primary {
+  background: linear-gradient(135deg, #284f77 0%, #3f6fa8 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 16px 26px rgba(40, 79, 119, 0.18);
+}
 
   .footer-button.danger {
     background: rgba(185, 57, 57, 0.10);
@@ -882,11 +881,11 @@ const css = `
   }
 
   .grade-toggle.active {
-    background: linear-gradient(135deg, #223a4e 0%, #2f5d62 100%);
-    color: white;
-    border: none;
-    box-shadow: 0 14px 24px rgba(35, 58, 99, 0.16);
-  }
+  background: linear-gradient(135deg, #284f77 0%, #3f6fa8 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 14px 24px rgba(40, 79, 119, 0.18);
+}
 
   .field-group {
     margin-bottom: 14px;
