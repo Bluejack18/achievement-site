@@ -1,29 +1,27 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  addDoc,
+  arrayRemove,
+  arrayUnion,
+  collection,
+  deleteDoc,
+  doc,
+  increment,
+  onSnapshot,
+  updateDoc,
+} from "firebase/firestore";
+import { db, ensureAnonymousAuth, watchAuth } from "./firebase";
 
-const STORAGE_KEY = "grade_achievement_gallery_v2";
-const LIKE_STORAGE_KEY = "grade_achievement_gallery_v2_liked_ids";
+const ADMIN_UID = "여기에_네_UID_붙여넣기";
 
-function readFileAsDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-function downloadDataUrl(dataUrl, filename) {
-  const link = document.createElement("a");
-  link.href = dataUrl;
-  link.download = filename || "download";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
-
-function formatStudentLabel(entry) {
-  return `${entry.studentId} ${entry.name}/${entry.topic}`;
-}
+const MATERIAL_LABELS = {
+  pdf: "PDF",
+  image: "이미지",
+  hwp: "한글파일",
+  ppt: "PPT",
+  doc: "문서",
+  other: "기타",
+};
 
 function parseHashtags(value) {
   if (!value) return [];
@@ -39,23 +37,36 @@ function parseHashtags(value) {
     .map((tag) => `#${tag}`);
 }
 
+function isValidUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function normalizeEntry(entry) {
   return {
-    id: entry?.id || `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    id: entry?.id || "",
     grade: Number(entry?.grade) || 1,
     studentId: entry?.studentId || "",
     name: entry?.name || "",
     topic: entry?.topic || "",
     description: entry?.description || "",
     hashtags: Array.isArray(entry?.hashtags) ? entry.hashtags : [],
-    fileName: entry?.fileName || "",
-    fileType: entry?.fileType || "application/octet-stream",
-    fileDataUrl: entry?.fileDataUrl || "",
-    coverImageName: entry?.coverImageName || "",
-    coverImageDataUrl: entry?.coverImageDataUrl || "",
-    createdAt: Number(entry?.createdAt) || Date.now(),
-    likeCount: Number(entry?.likeCount) || 0,
+    materialType: entry?.materialType || "other",
+    fileUrl: entry?.fileUrl || "",
+    coverImageUrl: entry?.coverImageUrl || "",
+    likedBy: Array.isArray(entry?.likedBy) ? entry.likedBy : [],
     views: Number(entry?.views) || 0,
+    authorUid: entry?.authorUid || "",
+    createdAt:
+      typeof entry?.createdAt === "number"
+        ? entry.createdAt
+        : entry?.createdAt?.seconds
+        ? entry.createdAt.seconds * 1000
+        : Date.now(),
   };
 }
 
@@ -65,7 +76,7 @@ function sortEntries(list, sortBy) {
   if (sortBy === "popular") {
     return copied.sort(
       (a, b) =>
-        (b.likeCount || 0) - (a.likeCount || 0) ||
+        (b.likedBy?.length || 0) - (a.likedBy?.length || 0) ||
         (b.views || 0) - (a.views || 0) ||
         (b.createdAt || 0) - (a.createdAt || 0)
     );
@@ -75,7 +86,7 @@ function sortEntries(list, sortBy) {
     return copied.sort(
       (a, b) =>
         (b.views || 0) - (a.views || 0) ||
-        (b.likeCount || 0) - (a.likeCount || 0) ||
+        (b.likedBy?.length || 0) - (a.likedBy?.length || 0) ||
         (b.createdAt || 0) - (a.createdAt || 0)
     );
   }
@@ -93,6 +104,24 @@ function formatDate(timestamp) {
   } catch {
     return "";
   }
+}
+
+function formatStudentLabel(entry) {
+  return `${entry.studentId} ${entry.name}/${entry.topic}`;
+}
+
+function getDisplayCoverUrl(entry) {
+  if (entry.coverImageUrl) return entry.coverImageUrl;
+  if (entry.materialType === "image") return entry.fileUrl;
+  return "";
+}
+
+function getFileTypeBadge(entry) {
+  return MATERIAL_LABELS[entry.materialType] || "자료";
+}
+
+function openExternalUrl(url) {
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 const css = `
@@ -309,7 +338,8 @@ const css = `
 
   .search-wrap input::placeholder,
   .field-input::placeholder,
-  .field-textarea::placeholder {
+  .field-textarea::placeholder,
+  .field-select {
     color: #98a2b1;
   }
 
@@ -397,12 +427,11 @@ const css = `
 
   .grade-button:hover,
   .ghost-button:hover,
-  .outline-button:hover,
-  .entry-thumb:hover,
   .footer-button:hover,
   .grade-toggle:hover,
   .sort-toggle:hover,
-  .stat-chip:hover {
+  .stat-chip:hover,
+  .entry-thumb:hover {
     transform: translateY(-1px);
   }
 
@@ -449,9 +478,7 @@ const css = `
   }
 
   .ghost-button,
-  .outline-button,
   .footer-button,
-  .upload-action,
   .grade-toggle,
   .sort-toggle,
   .stat-chip {
@@ -571,11 +598,56 @@ const css = `
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
   }
 
-  .entry-thumb img {
+  .entry-thumb img,
+  .detail-image {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
+  }
+
+  .entry-thumb-placeholder,
+  .detail-image-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      radial-gradient(circle at top left, rgba(188, 151, 84, 0.2), transparent 30%),
+      linear-gradient(180deg, rgba(244,240,233,1), rgba(233,226,214,1));
+    color: #24324a;
+    flex-direction: column;
+    gap: 10px;
+    padding: 18px;
+    text-align: center;
+  }
+
+  .placeholder-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 22px;
+    background: linear-gradient(135deg, #223962 0%, #315387 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 20px;
+    box-shadow: 0 12px 24px rgba(35, 58, 99, 0.18);
+  }
+
+  .placeholder-title {
+    font-size: 16px;
+    font-weight: 800;
+    line-height: 1.5;
+    color: #24324a;
+  }
+
+  .placeholder-subtitle {
+    font-size: 12px;
+    line-height: 1.7;
+    color: #6b7788;
   }
 
   .entry-overlay {
@@ -680,10 +752,12 @@ const css = `
     justify-content: space-between;
     gap: 12px;
     margin-top: 16px;
+    flex-wrap: wrap;
   }
 
   .footer-button {
     flex: 1;
+    min-width: 100px;
     height: 48px;
     border-radius: 16px;
     border: 1px solid rgba(31, 54, 92, 0.1);
@@ -698,6 +772,12 @@ const css = `
     color: white;
     border: none;
     box-shadow: 0 16px 26px rgba(35, 58, 99, 0.22);
+  }
+
+  .footer-button.danger {
+    background: rgba(185, 57, 57, 0.1);
+    color: #a13838;
+    border-color: rgba(185, 57, 57, 0.18);
   }
 
   .footer-button.like-active {
@@ -744,7 +824,8 @@ const css = `
   }
 
   .field-input,
-  .field-textarea {
+  .field-textarea,
+  .field-select {
     width: 100%;
     border: 1px solid rgba(31, 54, 92, 0.1);
     background: rgba(248,246,242,0.96);
@@ -753,7 +834,8 @@ const css = `
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
   }
 
-  .field-input {
+  .field-input,
+  .field-select {
     height: 54px;
     padding: 0 15px;
     border-radius: 16px;
@@ -765,36 +847,6 @@ const css = `
     border-radius: 18px;
     resize: none;
     line-height: 1.6;
-  }
-
-  .upload-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-top: 20px;
-  }
-
-  .upload-action {
-    min-height: 88px;
-    border-radius: 18px;
-    border: 1px solid rgba(31, 54, 92, 0.1);
-    background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(245,240,233,0.96));
-    color: #22324d;
-    font-weight: 800;
-    font-size: 16px;
-    box-shadow: 0 12px 22px rgba(28, 40, 60, 0.06);
-  }
-
-  .upload-file-name {
-    margin-top: 10px;
-    padding: 10px 12px;
-    border-radius: 14px;
-    background: rgba(255,255,255,0.7);
-    border: 1px solid rgba(31, 54, 92, 0.08);
-    color: #69778a;
-    font-size: 12px;
-    line-height: 1.7;
-    word-break: break-all;
   }
 
   .error-box {
@@ -833,13 +885,6 @@ const css = `
     width: 100%;
     height: 260px;
     background: #e8e2d8;
-  }
-
-  .detail-image {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
   }
 
   .detail-body {
@@ -930,6 +975,13 @@ const css = `
     word-break: break-word;
   }
 
+  .helper-text {
+    margin-top: 8px;
+    color: #7d8898;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+
   @media (max-width: 980px) {
     .hero-copy {
       width: 100%;
@@ -979,7 +1031,8 @@ export default function App() {
   const [detailSource, setDetailSource] = useState("home");
 
   const [entries, setEntries] = useState([]);
-  const [likedEntryIds, setLikedEntryIds] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
 
   const [homeSearchText, setHomeSearchText] = useState("");
   const [gradeSearchText, setGradeSearchText] = useState("");
@@ -998,56 +1051,46 @@ export default function App() {
   const [topic, setTopic] = useState("");
   const [description, setDescription] = useState("");
   const [hashtagsText, setHashtagsText] = useState("");
-  const [fileObject, setFileObject] = useState(null);
-  const [coverImageFile, setCoverImageFile] = useState(null);
+  const [materialType, setMaterialType] = useState("pdf");
+  const [fileUrl, setFileUrl] = useState("");
+  const [coverImageUrl, setCoverImageUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  const fileInputRef = useRef(null);
-  const imageInputRef = useRef(null);
-
   useEffect(() => {
-    try {
-      const savedEntries = localStorage.getItem(STORAGE_KEY);
-      if (savedEntries) {
-        const parsed = JSON.parse(savedEntries);
-        if (Array.isArray(parsed)) {
-          setEntries(parsed.map(normalizeEntry));
-        }
+    const unsubscribe = watchAuth((user) => {
+      setCurrentUser(user || null);
+      setAuthReady(true);
+      if (user) {
+        console.log("current anonymous uid:", user.uid);
       }
-    } catch (e) {
-      console.error("Failed to load saved entries", e);
-    }
+    });
 
-    try {
-      const savedLikes = localStorage.getItem(LIKE_STORAGE_KEY);
-      if (savedLikes) {
-        const parsedLikes = JSON.parse(savedLikes);
-        if (Array.isArray(parsedLikes)) {
-          setLikedEntryIds(parsedLikes);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load liked entry ids", e);
-    }
+    ensureAnonymousAuth().catch((error) => {
+      console.error(error);
+      setErrorMessage("사용자 식별을 준비하는 중 문제가 생겼어요. 페이지를 새로고침해 주세요.");
+      setAuthReady(true);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-    } catch (e) {
-      console.error("Failed to save entries", e);
-    }
-  }, [entries]);
+    const unsubscribe = onSnapshot(
+      collection(db, "entries"),
+      (snapshot) => {
+        const next = snapshot.docs.map((item) =>
+          normalizeEntry({ id: item.id, ...item.data() })
+        );
+        setEntries(next);
+      },
+      (error) => {
+        console.error(error);
+        setErrorMessage("자료 목록을 불러오는 중 문제가 생겼어요. Firestore 규칙을 확인해 주세요.");
+      }
+    );
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(LIKE_STORAGE_KEY, JSON.stringify(likedEntryIds));
-    } catch (e) {
-      console.error("Failed to save liked ids", e);
-    }
-  }, [likedEntryIds]);
-
-  const isLiked = (entryId) => likedEntryIds.includes(entryId);
+    return () => unsubscribe();
+  }, []);
 
   const selectedEntry = useMemo(() => {
     return entries.find((entry) => entry.id === selectedEntryId) || null;
@@ -1064,6 +1107,7 @@ export default function App() {
         entry.name,
         entry.topic,
         entry.description,
+        entry.materialType,
         ...(entry.hashtags || []),
       ]
         .join(" ")
@@ -1089,6 +1133,7 @@ export default function App() {
           entry.name,
           entry.topic,
           entry.description,
+          entry.materialType,
           ...(entry.hashtags || []),
         ]
           .join(" ")
@@ -1100,6 +1145,16 @@ export default function App() {
     return sortEntries(filtered, gradeSortMap[selectedGrade] || "latest");
   }, [entries, selectedGrade, gradeSearchText, gradeSortMap]);
 
+  const isLikedByCurrentUser = (entry) => {
+    if (!currentUser) return false;
+    return (entry.likedBy || []).includes(currentUser.uid);
+  };
+
+  const canDeleteEntry = (entry) => {
+    if (!currentUser) return false;
+    return currentUser.uid === entry.authorUid || currentUser.uid === ADMIN_UID;
+  };
+
   const resetUploadForm = () => {
     setUploadGrade(selectedGrade || 1);
     setStudentId("");
@@ -1107,12 +1162,10 @@ export default function App() {
     setTopic("");
     setDescription("");
     setHashtagsText("");
-    setFileObject(null);
-    setCoverImageFile(null);
+    setMaterialType("pdf");
+    setFileUrl("");
+    setCoverImageUrl("");
     setErrorMessage("");
-
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    if (imageInputRef.current) imageInputRef.current.value = "";
   };
 
   const goToHome = () => {
@@ -1145,80 +1198,91 @@ export default function App() {
     setTopic("");
     setDescription("");
     setHashtagsText("");
-    setFileObject(null);
-    setCoverImageFile(null);
+    setMaterialType("pdf");
+    setFileUrl("");
+    setCoverImageUrl("");
     setErrorMessage("");
-
-    setTimeout(() => {
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      if (imageInputRef.current) imageInputRef.current.value = "";
-    }, 0);
   };
 
-  const openDetailPage = (entryId, source) => {
+  const openDetailPage = async (entryId, source) => {
     setDetailSource(source);
     setSelectedEntryId(entryId);
-    setEntries((prev) =>
-      prev.map((entry) =>
-        entry.id === entryId
-          ? { ...entry, views: Number(entry.views || 0) + 1 }
-          : entry
-      )
-    );
     setPage("detail");
+
+    try {
+      await updateDoc(doc(db, "entries", entryId), {
+        views: increment(1),
+      });
+    } catch (error) {
+      console.error(error);
+    }
   };
 
-  const toggleLike = (entryId) => {
-    const alreadyLiked = likedEntryIds.includes(entryId);
-
-    setEntries((prev) =>
-      prev.map((entry) => {
-        if (entry.id !== entryId) return entry;
-        return {
-          ...entry,
-          likeCount: alreadyLiked
-            ? Math.max(0, Number(entry.likeCount || 0) - 1)
-            : Number(entry.likeCount || 0) + 1,
-        };
-      })
-    );
-
-    setLikedEntryIds((prev) =>
-      alreadyLiked ? prev.filter((id) => id !== entryId) : [...prev, entryId]
-    );
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0] || null;
-    setFileObject(file);
-  };
-
-  const handleImageChange = (e) => {
-    const file = e.target.files?.[0] || null;
-
-    if (file && !file.type.startsWith("image/")) {
-      setErrorMessage("표지사진 업로드에는 사진 파일만 넣을 수 있어요.");
-      e.target.value = "";
-      setCoverImageFile(null);
+  const toggleLike = async (entry) => {
+    if (!currentUser) {
+      setErrorMessage("사용자 식별이 아직 준비되지 않았어요. 잠시 후 다시 시도해 주세요.");
       return;
     }
 
-    setErrorMessage("");
-    setCoverImageFile(file);
+    try {
+      const liked = isLikedByCurrentUser(entry);
+      await updateDoc(doc(db, "entries", entry.id), {
+        likedBy: liked ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid),
+      });
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("좋아요 처리 중 문제가 생겼어요.");
+    }
+  };
+
+  const deleteEntry = async (entry) => {
+    if (!canDeleteEntry(entry)) {
+      setErrorMessage("이 자료를 삭제할 권한이 없어요.");
+      return;
+    }
+
+    const confirmed = window.confirm("정말 이 자료를 삭제할까요?");
+    if (!confirmed) return;
+
+    try {
+      await deleteDoc(doc(db, "entries", entry.id));
+      if (selectedEntryId === entry.id) {
+        goToHome();
+      }
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("자료 삭제 중 문제가 생겼어요.");
+    }
   };
 
   const canSubmit =
+    authReady &&
+    currentUser &&
     uploadGrade &&
     studentId.trim() &&
     name.trim() &&
     topic.trim() &&
     description.trim() &&
-    fileObject &&
-    coverImageFile;
+    fileUrl.trim();
 
   const handleSubmit = async () => {
+    if (!authReady || !currentUser) {
+      setErrorMessage("사용자 식별이 아직 준비되지 않았어요. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
+
     if (!canSubmit) {
-      setErrorMessage("학번, 이름, 탐구주제, 간단한 설명, 파일 업로드, 표지사진 업로드를 모두 완료해야 업로드할 수 있어요.");
+      setErrorMessage("학번, 이름, 탐구주제, 간단한 설명, 자료 링크를 모두 입력해야 등록할 수 있어요.");
+      return;
+    }
+
+    if (!isValidUrl(fileUrl.trim())) {
+      setErrorMessage("자료 링크는 http 또는 https로 시작하는 올바른 주소여야 해요.");
+      return;
+    }
+
+    if (coverImageUrl.trim() && !isValidUrl(coverImageUrl.trim())) {
+      setErrorMessage("대표 이미지 링크는 올바른 주소여야 해요.");
       return;
     }
 
@@ -1226,37 +1290,34 @@ export default function App() {
       setIsSaving(true);
       setErrorMessage("");
 
-      const [fileDataUrl, coverImageDataUrl] = await Promise.all([
-        readFileAsDataURL(fileObject),
-        readFileAsDataURL(coverImageFile),
-      ]);
+      const nextCoverUrl =
+        materialType === "image" && !coverImageUrl.trim()
+          ? fileUrl.trim()
+          : coverImageUrl.trim();
 
-      const newEntry = normalizeEntry({
-        id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      await addDoc(collection(db, "entries"), {
         grade: Number(uploadGrade),
         studentId: studentId.trim(),
         name: name.trim(),
         topic: topic.trim(),
         description: description.trim(),
         hashtags: parseHashtags(hashtagsText),
-        fileName: fileObject.name,
-        fileType: fileObject.type || "application/octet-stream",
-        fileDataUrl,
-        coverImageName: coverImageFile.name,
-        coverImageDataUrl,
-        createdAt: Date.now(),
-        likeCount: 0,
+        materialType,
+        fileUrl: fileUrl.trim(),
+        coverImageUrl: nextCoverUrl,
+        likedBy: [],
         views: 0,
+        authorUid: currentUser.uid,
+        createdAt: Date.now(),
       });
 
-      setEntries((prev) => [newEntry, ...prev]);
       setSelectedGrade(Number(uploadGrade));
       setGradeSearchText("");
       resetUploadForm();
       setPage("grade");
-    } catch (e) {
-      console.error(e);
-      setErrorMessage("업로드 중 문제가 생겼어요. 파일이 너무 크면 브라우저 저장 공간 때문에 실패할 수 있어요.");
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("자료 등록 중 문제가 생겼어요. Firestore 규칙이나 입력한 링크를 확인해 주세요.");
     } finally {
       setIsSaving(false);
     }
@@ -1288,6 +1349,32 @@ export default function App() {
     </div>
   );
 
+  const renderEntryThumb = (entry) => {
+    const coverUrl = getDisplayCoverUrl(entry);
+
+    return (
+      <button
+        type="button"
+        className="entry-thumb"
+        onClick={() => openDetailPage(entry.id, selectedGrade ? "grade" : "home")}
+        title="상세 보기"
+      >
+        {coverUrl ? (
+          <img src={coverUrl} alt={`${entry.name} 표지`} />
+        ) : (
+          <div className="entry-thumb-placeholder">
+            <div className="placeholder-icon">{getFileTypeBadge(entry)}</div>
+            <div className="placeholder-title">{entry.topic}</div>
+            <div className="placeholder-subtitle">
+              대표 이미지가 없어서 기본 표지를 보여주고 있어요.
+            </div>
+          </div>
+        )}
+        <div className="entry-overlay">상세 보기</div>
+      </button>
+    );
+  };
+
   const renderEntryCards = (list, source, showGrade = false) => (
     <div className="entry-list">
       {list.map((entry) => (
@@ -1296,9 +1383,19 @@ export default function App() {
             type="button"
             className="entry-thumb"
             onClick={() => openDetailPage(entry.id, source)}
-            title="썸네일을 클릭하면 상세 화면으로 이동합니다"
+            title="상세 보기"
           >
-            <img src={entry.coverImageDataUrl} alt={`${entry.name} 표지사진`} />
+            {getDisplayCoverUrl(entry) ? (
+              <img src={getDisplayCoverUrl(entry)} alt={`${entry.name} 표지`} />
+            ) : (
+              <div className="entry-thumb-placeholder">
+                <div className="placeholder-icon">{getFileTypeBadge(entry)}</div>
+                <div className="placeholder-title">{entry.topic}</div>
+                <div className="placeholder-subtitle">
+                  링크형 자료 · 기본 표지 표시
+                </div>
+              </div>
+            )}
             <div className="entry-overlay">상세 보기</div>
           </button>
 
@@ -1311,6 +1408,10 @@ export default function App() {
             {showGrade
               ? `${entry.grade}학년 · ${formatStudentLabel(entry)}`
               : formatStudentLabel(entry)}
+
+            <div className="tag-row">
+              <span className="tag-chip">{getFileTypeBadge(entry)}</span>
+            </div>
 
             {entry.description ? (
               <div className="entry-description">{entry.description}</div>
@@ -1330,10 +1431,10 @@ export default function App() {
           <div className="entry-actions-row">
             <button
               type="button"
-              className={`stat-chip ${isLiked(entry.id) ? "like-active" : ""}`}
-              onClick={() => toggleLike(entry.id)}
+              className={`stat-chip ${isLikedByCurrentUser(entry) ? "like-active" : ""}`}
+              onClick={() => toggleLike(entry)}
             >
-              ♥ {entry.likeCount}
+              ♥ {entry.likedBy?.length || 0}
             </button>
 
             <div className="entry-actions-right">
@@ -1368,8 +1469,8 @@ export default function App() {
             한곳에 모아보는 아카이브
           </h2>
           <p>
-            학년별 자료를 정리해서 보고, 홈 화면에서는 1학년부터 3학년까지
-            전체 자료를 통합 검색할 수 있도록 구성했습니다.
+            학년별 자료를 정리해서 보고, 홈 화면에서는 1학년부터 3학년까지 전체 자료를
+            통합 검색할 수 있도록 구성했습니다.
           </p>
         </div>
 
@@ -1442,7 +1543,8 @@ export default function App() {
         </div>
 
         <div className="home-note">
-          썸네일을 누르면 상세 화면으로 이동하며, 그곳에서 설명·해시태그·좋아요·조회수·파일 다운로드를 확인할 수 있습니다.
+          이 버전은 무료 운영을 위해 자료 자체 업로드 대신 링크 등록 방식으로 동작합니다.
+          원본 파일은 상세 화면에서 외부 링크로 열립니다.
         </div>
       </div>
     </div>
@@ -1499,9 +1601,9 @@ export default function App() {
         <div className="list-wrap">
           {gradeFilteredEntries.length === 0 ? (
             <div className="empty-card">
-              아직 업로드된 자료가 없어요.
+              아직 등록된 자료가 없어요.
               <br />
-              업로드 버튼을 눌러 첫 자료를 올려보세요.
+              업로드 버튼을 눌러 첫 자료를 등록해보세요.
             </div>
           ) : (
             renderEntryCards(gradeFilteredEntries, "grade")
@@ -1528,7 +1630,7 @@ export default function App() {
             <div className="brand-mark">A</div>
             <div>
               <div className="brand-title">Achievement Archive</div>
-              <div className="brand-subtitle">자료 업로드</div>
+              <div className="brand-subtitle">자료 등록</div>
             </div>
           </div>
           <div className="grade-pill">업로드</div>
@@ -1537,8 +1639,7 @@ export default function App() {
         <div className="headline-box">
           <h2>성과 자료 등록</h2>
           <p>
-            학번, 이름, 탐구주제, 간단한 설명, 파일, 표지사진을 모두 입력하면
-            목록 화면에 바로 반영됩니다.
+            학번, 이름, 탐구주제, 설명, 자료 링크를 입력하면 목록 화면에 바로 반영됩니다.
           </p>
         </div>
 
@@ -1556,6 +1657,22 @@ export default function App() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="field-group">
+          <label className="field-label">자료 형식</label>
+          <select
+            className="field-select"
+            value={materialType}
+            onChange={(e) => setMaterialType(e.target.value)}
+          >
+            <option value="pdf">PDF</option>
+            <option value="image">이미지</option>
+            <option value="hwp">한글파일(HWP/HWPX)</option>
+            <option value="ppt">발표자료(PPT/PPTX)</option>
+            <option value="doc">문서(DOC/DOCX)</option>
+            <option value="other">기타</option>
+          </select>
         </div>
 
         <div className="field-group">
@@ -1608,48 +1725,37 @@ export default function App() {
           />
         </div>
 
-        <div className="upload-actions">
-          <button
-            className="upload-action"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            파일 업로드
-          </button>
-          <button
-            className="upload-action"
-            onClick={() => imageInputRef.current?.click()}
-          >
-            표지사진 업로드
-          </button>
+        <div className="field-group">
+          <label className="field-label">자료 링크</label>
+          <input
+            className="field-input"
+            value={fileUrl}
+            onChange={(e) => setFileUrl(e.target.value)}
+            placeholder="Google Drive, OneDrive, PDF 공개 링크 등을 입력하세요"
+          />
+          <div className="helper-text">
+            학생들은 이 링크를 눌러 원본 자료로 이동합니다.
+          </div>
         </div>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          style={{ display: "none" }}
-          onChange={handleFileChange}
-        />
-
-        <input
-          ref={imageInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={handleImageChange}
-        />
-
-        <div className="upload-file-name">
-          파일: {fileObject ? fileObject.name : "선택된 파일 없음"}
-        </div>
-        <div className="upload-file-name">
-          표지사진: {coverImageFile ? coverImageFile.name : "선택된 표지사진 없음"}
+        <div className="field-group">
+          <label className="field-label">대표 이미지 링크 (선택)</label>
+          <input
+            className="field-input"
+            value={coverImageUrl}
+            onChange={(e) => setCoverImageUrl(e.target.value)}
+            placeholder="표지로 쓸 이미지 주소가 있으면 입력하세요"
+          />
+          <div className="helper-text">
+            이미지 자료는 비워두면 자료 링크를 표지처럼 사용합니다. 한글파일, PPT, DOCX는 대표 이미지 링크를 넣으면 카드가 더 예쁘게 보입니다.
+          </div>
         </div>
 
         {errorMessage ? <div className="error-box">{errorMessage}</div> : null}
 
         <div className="upload-info">
-          등록 후에는 선택한 학년 목록과 홈 화면 통합 검색에서 모두 확인할 수 있습니다.
-          썸네일을 누르면 상세 화면으로 이동하며, 그곳에서 다운로드와 좋아요를 사용할 수 있습니다.
+          이 버전은 무료 운영을 위해 파일 자체를 저장하지 않고 링크만 보관합니다.
+          작성한 사람은 자기 자료를 삭제할 수 있고, 관리자 UID를 넣은 너는 모든 자료를 삭제할 수 있습니다.
         </div>
 
         <div className="footer-actions">
@@ -1666,7 +1772,7 @@ export default function App() {
             뒤로가기
           </button>
           <button className="footer-button primary" onClick={handleSubmit} disabled={isSaving}>
-            {isSaving ? "업로드 중" : "확인"}
+            {isSaving ? "등록 중" : "확인"}
           </button>
         </div>
       </div>
@@ -1693,6 +1799,9 @@ export default function App() {
       );
     }
 
+    const coverUrl = getDisplayCoverUrl(selectedEntry);
+    const deletable = canDeleteEntry(selectedEntry);
+
     return (
       <div className="phone-shell">
         <div className="phone-inner">
@@ -1711,7 +1820,7 @@ export default function App() {
             <div>
               <div className="page-title">탐구 상세 정보</div>
               <div className="page-subtitle">
-                자료 설명, 해시태그, 좋아요, 조회수, 다운로드를 확인할 수 있습니다.
+                설명, 해시태그, 좋아요, 조회수, 원본 자료 링크를 확인할 수 있습니다.
               </div>
             </div>
           </div>
@@ -1719,15 +1828,27 @@ export default function App() {
           <div className="detail-scroll">
             <div className="detail-card">
               <div className="detail-image-wrap">
-                <img
-                  className="detail-image"
-                  src={selectedEntry.coverImageDataUrl}
-                  alt={`${selectedEntry.name} 표지사진`}
-                />
+                {coverUrl ? (
+                  <img
+                    className="detail-image"
+                    src={coverUrl}
+                    alt={`${selectedEntry.name} 표지`}
+                  />
+                ) : (
+                  <div className="detail-image-placeholder">
+                    <div className="placeholder-icon">{getFileTypeBadge(selectedEntry)}</div>
+                    <div className="placeholder-title">{selectedEntry.topic}</div>
+                    <div className="placeholder-subtitle">
+                      대표 이미지가 없어 기본 표지를 표시하고 있어요.
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="detail-body">
-                <div className="detail-kicker">{selectedEntry.grade}학년 자료</div>
+                <div className="detail-kicker">
+                  {selectedEntry.grade}학년 · {getFileTypeBadge(selectedEntry)}
+                </div>
 
                 <h3 className="detail-title">{selectedEntry.topic}</h3>
                 <div className="detail-author">
@@ -1740,16 +1861,16 @@ export default function App() {
                     <span>{formatDate(selectedEntry.createdAt)}</span>
                   </div>
                   <div className="detail-meta-item">
-                    <strong>파일명</strong>
-                    <span>{selectedEntry.fileName}</span>
-                  </div>
-                  <div className="detail-meta-item">
                     <strong>좋아요</strong>
-                    <span>{selectedEntry.likeCount}개</span>
+                    <span>{selectedEntry.likedBy?.length || 0}개</span>
                   </div>
                   <div className="detail-meta-item">
                     <strong>조회수</strong>
                     <span>{selectedEntry.views}회</span>
+                  </div>
+                  <div className="detail-meta-item">
+                    <strong>자료 형식</strong>
+                    <span>{getFileTypeBadge(selectedEntry)}</span>
                   </div>
                 </div>
 
@@ -1772,6 +1893,13 @@ export default function App() {
                     </div>
                   </div>
                 ) : null}
+
+                <div className="detail-description-box">
+                  <span className="detail-section-title">원본 자료 링크</span>
+                  <div className="detail-description-text">
+                    {selectedEntry.fileUrl}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1780,20 +1908,29 @@ export default function App() {
             <button className="footer-button" onClick={goBackFromDetail}>
               뒤로가기
             </button>
+
             <button
-              className={`footer-button ${isLiked(selectedEntry.id) ? "like-active" : ""}`}
-              onClick={() => toggleLike(selectedEntry.id)}
+              className={`footer-button ${isLikedByCurrentUser(selectedEntry) ? "like-active" : ""}`}
+              onClick={() => toggleLike(selectedEntry)}
             >
-              ♥ {selectedEntry.likeCount}
+              ♥ {selectedEntry.likedBy?.length || 0}
             </button>
+
             <button
               className="footer-button primary"
-              onClick={() =>
-                downloadDataUrl(selectedEntry.fileDataUrl, selectedEntry.fileName)
-              }
+              onClick={() => openExternalUrl(selectedEntry.fileUrl)}
             >
-              파일 다운로드
+              자료 열기
             </button>
+
+            {deletable ? (
+              <button
+                className="footer-button danger"
+                onClick={() => deleteEntry(selectedEntry)}
+              >
+                삭제
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1819,22 +1956,21 @@ export default function App() {
               <div className="feature-card">
                 <strong>학년별 탐색 + 홈 통합 검색</strong>
                 <span>
-                  1학년, 2학년, 3학년 자료를 각각 나눠서 볼 수 있고, 홈 화면에서는
-                  학년 구분 없이 전체 자료를 한 번에 검색할 수 있습니다.
+                  1학년, 2학년, 3학년 자료를 각각 나눠서 볼 수 있고, 홈 화면에서는 학년 구분 없이 전체 자료를 한 번에 검색할 수 있습니다.
                 </span>
               </div>
 
               <div className="feature-card">
-                <strong>상세 화면 중심 탐색</strong>
+                <strong>무료 링크형 자료 등록</strong>
                 <span>
-                  목록의 썸네일을 누르면 상세 화면으로 이동하며, 그곳에서 설명과 해시태그를 확인하고 파일을 다운로드할 수 있습니다.
+                  Firebase Storage 없이도 Google Drive, OneDrive, 공개 PDF 링크 등을 등록해 무료로 운영할 수 있도록 설계했습니다.
                 </span>
               </div>
 
               <div className="feature-card">
-                <strong>분기별 우수 탐구 투표</strong>
+                <strong>작성자 삭제 + 관리자 전체 삭제</strong>
                 <span>
-                  3개월에 한 번 투표를 통해 가장 인상적인 탐구를 선정하고, 1등·2등·3등에게 상품을 제공하는 운영 방식까지 자연스럽게 확장할 수 있습니다.
+                  작성자는 자기 자료만 삭제할 수 있고, 관리자 UID를 설정한 운영자는 모든 자료를 관리할 수 있습니다.
                 </span>
               </div>
             </div>
