@@ -1962,9 +1962,13 @@ export default function App() {
           >
             뒤로가기
           </button>
-          <button className="footer-button primary" onClick={handleSubmit} disabled={isSaving}>
-            {isSaving ? "등록 중" : "확인"}
-          </button>
+          <button
+  className="footer-button primary"
+  onClick={handleSubmit}
+  disabled={isSaving || !authReady || !currentUser}
+>
+  {isSaving ? "등록 중" : !authReady || !currentUser ? "사용자 준비 중..." : "확인"}
+</button>
         </div>
       </div>
     </div>
