@@ -12,7 +12,7 @@ import {
 } from "firebase/firestore";
 import { db, ensureAnonymousAuth, watchAuth } from "./firebase";
 
-const ADMIN_UID = "여기에_네_UID_붙여넣기";
+const ADMIN_UID = "maoNxlKaavR1mKEKeCmbKddZVIn2";
 
 const MATERIAL_LABELS = {
   pdf: "PDF",
