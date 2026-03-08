@@ -244,9 +244,9 @@ const css = `
     border-radius: 999px;
     background: rgba(255,255,255,0.72);
     border: 1px solid rgba(31, 54, 92, 0.10);
-    color: #4f6175;
+    color: #3f5064;
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 800;
     letter-spacing: 0.04em;
   }
 
@@ -260,9 +260,10 @@ const css = `
   }
 
   .hero-description {
-    color: #627080;
+    color: #4f5f72;
     font-size: 15px;
     line-height: 1.8;
+    font-weight: 500;
   }
 
   .feature-list {
@@ -287,9 +288,10 @@ const css = `
   }
 
   .feature-card span {
-    color: #667487;
+    color: #516173;
     font-size: 13px;
     line-height: 1.75;
+    font-weight: 500;
   }
 
   .phone-shell {
@@ -346,8 +348,9 @@ const css = `
 
   .brand-subtitle {
     font-size: 12px;
-    color: #748092;
+    color: #566577;
     margin-top: 2px;
+    font-weight: 600;
   }
 
   .grade-pill {
@@ -379,9 +382,10 @@ const css = `
 
   .headline-box p {
     margin: 10px 0 0;
-    color: #69778a;
+    color: #566679;
     font-size: 14px;
     line-height: 1.75;
+    font-weight: 500;
   }
 
   .search-wrap {
@@ -408,7 +412,8 @@ const css = `
   .search-wrap input::placeholder,
   .field-input::placeholder,
   .field-textarea::placeholder {
-    color: #98a2b1;
+    color: #6f7c8d;
+    font-weight: 500;
   }
 
   .search-icon {
@@ -453,16 +458,17 @@ const css = `
     margin-bottom: 14px;
     font-size: 13px;
     font-weight: 800;
-    color: #778294;
+    color: #5c6b7e;
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
 
   .section-subtitle {
     margin-top: 4px;
-    color: #6b7788;
+    color: #556476;
     font-size: 13px;
     line-height: 1.7;
+    font-weight: 500;
   }
 
   .grade-grid {
@@ -526,9 +532,10 @@ const css = `
 
   .page-subtitle {
     margin-top: 4px;
-    color: #788598;
+    color: #5a697c;
     font-size: 13px;
     line-height: 1.6;
+    font-weight: 500;
   }
 
   .ghost-button,
@@ -575,7 +582,7 @@ const css = `
   }
 
   .result-count {
-    color: #728092;
+    color: #5a687a;
     font-size: 13px;
     font-weight: 700;
   }
@@ -644,9 +651,10 @@ const css = `
   .empty-card {
     padding: 34px 22px;
     text-align: center;
-    color: #687688;
+    color: #556477;
     line-height: 1.8;
     font-size: 15px;
+    font-weight: 500;
   }
 
   .entry-card {
@@ -715,7 +723,8 @@ const css = `
   .placeholder-subtitle {
     font-size: 12px;
     line-height: 1.7;
-    color: #6b7788;
+    color: #556476;
+    font-weight: 500;
   }
 
   .entry-overlay {
@@ -753,9 +762,10 @@ const css = `
 
   .entry-description {
     margin-top: 10px;
-    color: #5f6c7e;
+    color: #4f5f72;
     font-size: 13px;
     line-height: 1.7;
+    font-weight: 500;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -887,7 +897,7 @@ const css = `
     margin-bottom: 8px;
     font-size: 13px;
     font-weight: 800;
-    color: #6f7e92;
+    color: #58687b;
     letter-spacing: 0.03em;
   }
 
@@ -936,9 +946,10 @@ const css = `
     border-radius: 18px;
     background: rgba(255,255,255,0.72);
     border: 1px solid rgba(31, 54, 92, 0.08);
-    color: #69778b;
+    color: #556477;
     font-size: 13px;
     line-height: 1.8;
+    font-weight: 500;
   }
 
   .detail-scroll {
@@ -984,9 +995,10 @@ const css = `
 
   .detail-author {
     margin-top: 8px;
-    color: #6a7788;
+    color: #546375;
     font-size: 14px;
     line-height: 1.7;
+    font-weight: 500;
   }
 
   .detail-meta-grid {
@@ -1037,11 +1049,12 @@ const css = `
   }
 
   .detail-description-text {
-    color: #41506a;
+    color: #384861;
     font-size: 14px;
     line-height: 1.8;
     white-space: pre-wrap;
     word-break: break-word;
+    font-weight: 500;
   }
 
   @media (max-width: 980px) {
@@ -1632,9 +1645,9 @@ export default function App() {
 
         <div className="headline-box">
           <h2>
-            강원과학고의 탐구 자료를
+            학년별 탐구 자료를 
             <br />
-            함께 모아보는 아카이브
+            한곳에서 찾아보세요
           </h2>
           <p>학년별로 자료를 나눠 보고, 홈에서는 전체 자료를 한 번에 검색할 수 있어요.</p>
         </div>
@@ -2067,9 +2080,9 @@ export default function App() {
             <div className="hero-kicker">KSHS RESEARCH ARCHIVE</div>
 
             <h1 className="hero-title">
-              강원과학고 학생들의 탐구를
+              강원과학고 학생들의 탐구 성과를
               <br />
-              쉽고 편하게 모아보는 아카이브
+              기록하고 공유하는 아카이브
             </h1>
 
             <div className="hero-description">
@@ -2089,7 +2102,7 @@ export default function App() {
 
               <div className="feature-card">
                 <strong>문의 및 오류 제보</strong>
-                <span>이 페이지는 2101 강동헌이 제작했습니다. 사용 중 문제가 생기거나 수정이 필요하면 직접 찾아와 알려주면 빠르게 반영하겠습니다.</span>
+                <span>이 페이지는 2101 강동헌이 제작했습니다. 사용 중 문제가 생기거나 수정이 필요하면 알려주시면 빠르게 반영하겠습니다.</span>
               </div>
             </div>
           </div>
