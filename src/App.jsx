@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  addDoc,
   arrayRemove,
   arrayUnion,
   collection,
@@ -8,11 +7,24 @@ import {
   doc,
   increment,
   onSnapshot,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
-import { db, ensureAnonymousAuth, watchAuth } from "./firebase";
+import {
+  deleteObject,
+  getDownloadURL,
+  ref,
+  uploadBytes,
+} from "firebase/storage";
+import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
+import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { db, storage, ensureAnonymousAuth, watchAuth } from "./firebase";
+
+GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const ADMIN_UID = "maoNxlKaavR1mKEKeCmbKddZVIn2";
+const MAX_MAIN_FILE_MB = 30;
+const MAX_COVER_FILE_MB = 8;
 
 const MATERIAL_LABELS = {
   pdf: "PDF",
@@ -37,15 +49,6 @@ function parseHashtags(value) {
     .map((tag) => `#${tag}`);
 }
 
-function isValidUrl(value) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 function normalizeEntry(entry) {
   return {
     id: entry?.id || "",
@@ -61,6 +64,10 @@ function normalizeEntry(entry) {
     likedBy: Array.isArray(entry?.likedBy) ? entry.likedBy : [],
     views: Number(entry?.views) || 0,
     authorUid: entry?.authorUid || "",
+    filePath: entry?.filePath || "",
+    coverPath: entry?.coverPath || "",
+    fileName: entry?.fileName || "",
+    fileSize: Number(entry?.fileSize) || 0,
     createdAt:
       typeof entry?.createdAt === "number"
         ? entry.createdAt
@@ -124,6 +131,80 @@ function openExternalUrl(url) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
+function sanitizeFileName(name) {
+  return String(name || "file")
+    .normalize("NFKD")
+    .replace(/[^\w.\-()가-힣]+/g, "_");
+}
+
+function inferMaterialType(file) {
+  if (!file) return "other";
+  const fileName = file.name.toLowerCase();
+
+  if (file.type.startsWith("image/")) return "image";
+  if (fileName.endsWith(".pdf")) return "pdf";
+  if (fileName.endsWith(".hwp") || fileName.endsWith(".hwpx")) return "hwp";
+  if (fileName.endsWith(".ppt") || fileName.endsWith(".pptx")) return "ppt";
+  if (fileName.endsWith(".doc") || fileName.endsWith(".docx")) return "doc";
+
+  return "other";
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return "-";
+  const kb = 1024;
+  const mb = kb * 1024;
+  if (bytes >= mb) return `${(bytes / mb).toFixed(1)}MB`;
+  if (bytes >= kb) return `${Math.round(bytes / kb)}KB`;
+  return `${bytes}B`;
+}
+
+function getAcceptByMaterialType(type) {
+  switch (type) {
+    case "pdf":
+      return ".pdf,application/pdf";
+    case "image":
+      return "image/*";
+    case "hwp":
+      return ".hwp,.hwpx";
+    case "ppt":
+      return ".ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    case "doc":
+      return ".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    default:
+      return "*";
+  }
+}
+
+async function createPdfCoverBlob(pdfFile) {
+  const arrayBuffer = await pdfFile.arrayBuffer();
+  const pdf = await getDocument({ data: arrayBuffer }).promise;
+  const page = await pdf.getPage(1);
+
+  const viewport = page.getViewport({ scale: 1.7 });
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+
+  await page.render({
+    canvasContext: context,
+    viewport,
+  }).promise;
+
+  const blob = await new Promise((resolve) =>
+    canvas.toBlob(resolve, "image/jpeg", 0.9)
+  );
+
+  return blob;
+}
+
+/*
+  여기 const css에는
+  네가 기존에 쓰고 있던 css 문자열 전체를 그대로 넣어.
+  지금 네가 보낸 App.jsx의 css 그대로 쓰면 된다.
+*/
 const css = `
   * {
     box-sizing: border-box;
@@ -1044,6 +1125,7 @@ export default function App() {
   });
 
   const [errorMessage, setErrorMessage] = useState("");
+  const [uploadStatus, setUploadStatus] = useState("");
 
   const [uploadGrade, setUploadGrade] = useState(1);
   const [studentId, setStudentId] = useState("");
@@ -1052,8 +1134,8 @@ export default function App() {
   const [description, setDescription] = useState("");
   const [hashtagsText, setHashtagsText] = useState("");
   const [materialType, setMaterialType] = useState("pdf");
-  const [fileUrl, setFileUrl] = useState("");
-  const [coverImageUrl, setCoverImageUrl] = useState("");
+  const [uploadFile, setUploadFile] = useState(null);
+  const [coverFile, setCoverFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -1163,9 +1245,10 @@ export default function App() {
     setDescription("");
     setHashtagsText("");
     setMaterialType("pdf");
-    setFileUrl("");
-    setCoverImageUrl("");
+    setUploadFile(null);
+    setCoverFile(null);
     setErrorMessage("");
+    setUploadStatus("");
   };
 
   const goToHome = () => {
@@ -1173,6 +1256,7 @@ export default function App() {
     setSelectedGrade(null);
     setSelectedEntryId(null);
     setErrorMessage("");
+    setUploadStatus("");
   };
 
   const goBackFromDetail = () => {
@@ -1188,6 +1272,7 @@ export default function App() {
     setGradeSearchText(homeSearchText.trim());
     setPage("grade");
     setErrorMessage("");
+    setUploadStatus("");
   };
 
   const openUploadPage = () => {
@@ -1199,9 +1284,10 @@ export default function App() {
     setDescription("");
     setHashtagsText("");
     setMaterialType("pdf");
-    setFileUrl("");
-    setCoverImageUrl("");
+    setUploadFile(null);
+    setCoverFile(null);
     setErrorMessage("");
+    setUploadStatus("");
   };
 
   const openDetailPage = async (entryId, source) => {
@@ -1245,7 +1331,18 @@ export default function App() {
     if (!confirmed) return;
 
     try {
+      const paths = Array.from(
+        new Set([entry.filePath, entry.coverPath].filter(Boolean))
+      );
+
+      if (paths.length) {
+        await Promise.allSettled(
+          paths.map((path) => deleteObject(ref(storage, path)))
+        );
+      }
+
       await deleteDoc(doc(db, "entries", entry.id));
+
       if (selectedEntryId === entry.id) {
         goToHome();
       }
@@ -1263,52 +1360,138 @@ export default function App() {
     name.trim() &&
     topic.trim() &&
     description.trim() &&
-    fileUrl.trim();
+    uploadFile;
 
-  const handleSubmit = async () => {
+  const validateUpload = () => {
     if (!authReady || !currentUser) {
-      setErrorMessage("사용자 식별이 아직 준비되지 않았어요. 잠시 후 다시 시도해 주세요.");
-      return;
+      return "사용자 식별이 아직 준비되지 않았어요. 잠시 후 다시 시도해 주세요.";
     }
 
     if (!canSubmit) {
-      setErrorMessage("학번, 이름, 탐구주제, 간단한 설명, 자료 링크를 모두 입력해야 등록할 수 있어요.");
+      return "학번, 이름, 탐구주제, 간단한 설명, 원본 파일을 모두 입력해야 등록할 수 있어요.";
+    }
+
+    if (uploadFile.size > MAX_MAIN_FILE_MB * 1024 * 1024) {
+      return `원본 파일은 ${MAX_MAIN_FILE_MB}MB 이하만 업로드할 수 있어요.`;
+    }
+
+    if (coverFile && coverFile.size > MAX_COVER_FILE_MB * 1024 * 1024) {
+      return `표지 이미지는 ${MAX_COVER_FILE_MB}MB 이하만 업로드할 수 있어요.`;
+    }
+
+    return "";
+  };
+
+  const handleSubmit = async () => {
+    const validationError = validateUpload();
+    if (validationError) {
+      setErrorMessage(validationError);
       return;
     }
 
-    if (!isValidUrl(fileUrl.trim())) {
-      setErrorMessage("자료 링크는 http 또는 https로 시작하는 올바른 주소여야 해요.");
-      return;
-    }
-
-    if (coverImageUrl.trim() && !isValidUrl(coverImageUrl.trim())) {
-      setErrorMessage("대표 이미지 링크는 올바른 주소여야 해요.");
-      return;
-    }
+    const uploadedPaths = [];
 
     try {
       setIsSaving(true);
       setErrorMessage("");
+      setUploadStatus("원본 파일 업로드 준비 중...");
 
-      const nextCoverUrl =
-        materialType === "image" && !coverImageUrl.trim()
-          ? fileUrl.trim()
-          : coverImageUrl.trim();
+      const entryRef = doc(collection(db, "entries"));
+      const finalType = materialType === "other" ? inferMaterialType(uploadFile) : materialType;
+      const basePath = `entries/${entryRef.id}`;
 
-      await addDoc(collection(db, "entries"), {
+      const mainFilePath = `${basePath}/main_${Date.now()}_${sanitizeFileName(uploadFile.name)}`;
+      const mainFileRef = ref(storage, mainFilePath);
+
+      setUploadStatus("원본 파일 업로드 중...");
+      await uploadBytes(mainFileRef, uploadFile, {
+        contentType: uploadFile.type || undefined,
+        customMetadata: {
+          ownerUid: currentUser.uid,
+          entryId: entryRef.id,
+          role: "main",
+          originalName: uploadFile.name,
+        },
+      });
+      uploadedPaths.push(mainFilePath);
+
+      const mainFileUrl = await getDownloadURL(mainFileRef);
+
+      let finalCoverUrl = "";
+      let finalCoverPath = "";
+
+      if (coverFile) {
+        setUploadStatus("대표 이미지 업로드 중...");
+
+        const coverPath = `${basePath}/cover_${Date.now()}_${sanitizeFileName(
+          coverFile.name
+        )}`;
+        const coverRef = ref(storage, coverPath);
+
+        await uploadBytes(coverRef, coverFile, {
+          contentType: coverFile.type || undefined,
+          customMetadata: {
+            ownerUid: currentUser.uid,
+            entryId: entryRef.id,
+            role: "cover",
+            originalName: coverFile.name,
+          },
+        });
+        uploadedPaths.push(coverPath);
+
+        finalCoverUrl = await getDownloadURL(coverRef);
+        finalCoverPath = coverPath;
+      } else if (finalType === "image") {
+        finalCoverUrl = mainFileUrl;
+        finalCoverPath = mainFilePath;
+      } else if (finalType === "pdf") {
+        try {
+          setUploadStatus("PDF 첫 페이지 표지 생성 중...");
+
+          const pdfCoverBlob = await createPdfCoverBlob(uploadFile);
+          if (pdfCoverBlob) {
+            const autoCoverPath = `${basePath}/auto_cover_first_page.jpg`;
+            const autoCoverRef = ref(storage, autoCoverPath);
+
+            await uploadBytes(autoCoverRef, pdfCoverBlob, {
+              contentType: "image/jpeg",
+              customMetadata: {
+                ownerUid: currentUser.uid,
+                entryId: entryRef.id,
+                role: "autoCover",
+                originalName: "auto_cover_first_page.jpg",
+              },
+            });
+            uploadedPaths.push(autoCoverPath);
+
+            finalCoverUrl = await getDownloadURL(autoCoverRef);
+            finalCoverPath = autoCoverPath;
+          }
+        } catch (error) {
+          console.warn("PDF 첫 페이지 표지 생성 실패:", error);
+        }
+      }
+
+      setUploadStatus("메타데이터 저장 중...");
+
+      await setDoc(entryRef, {
         grade: Number(uploadGrade),
         studentId: studentId.trim(),
         name: name.trim(),
         topic: topic.trim(),
         description: description.trim(),
         hashtags: parseHashtags(hashtagsText),
-        materialType,
-        fileUrl: fileUrl.trim(),
-        coverImageUrl: nextCoverUrl,
+        materialType: finalType,
+        fileUrl: mainFileUrl,
+        coverImageUrl: finalCoverUrl,
         likedBy: [],
         views: 0,
         authorUid: currentUser.uid,
         createdAt: Date.now(),
+        filePath: mainFilePath,
+        coverPath: finalCoverPath,
+        fileName: uploadFile.name,
+        fileSize: uploadFile.size,
       });
 
       setSelectedGrade(Number(uploadGrade));
@@ -1317,9 +1500,17 @@ export default function App() {
       setPage("grade");
     } catch (error) {
       console.error(error);
-      setErrorMessage("자료 등록 중 문제가 생겼어요. Firestore 규칙이나 입력한 링크를 확인해 주세요.");
+
+      if (uploadedPaths.length) {
+        await Promise.allSettled(
+          uploadedPaths.map((path) => deleteObject(ref(storage, path)))
+        );
+      }
+
+      setErrorMessage("자료 등록 중 문제가 생겼어요. Auth, Firestore, Storage 규칙을 다시 확인해 주세요.");
     } finally {
       setIsSaving(false);
+      setUploadStatus("");
     }
   };
 
@@ -1349,32 +1540,6 @@ export default function App() {
     </div>
   );
 
-  const renderEntryThumb = (entry) => {
-    const coverUrl = getDisplayCoverUrl(entry);
-
-    return (
-      <button
-        type="button"
-        className="entry-thumb"
-        onClick={() => openDetailPage(entry.id, selectedGrade ? "grade" : "home")}
-        title="상세 보기"
-      >
-        {coverUrl ? (
-          <img src={coverUrl} alt={`${entry.name} 표지`} />
-        ) : (
-          <div className="entry-thumb-placeholder">
-            <div className="placeholder-icon">{getFileTypeBadge(entry)}</div>
-            <div className="placeholder-title">{entry.topic}</div>
-            <div className="placeholder-subtitle">
-              대표 이미지가 없어서 기본 표지를 보여주고 있어요.
-            </div>
-          </div>
-        )}
-        <div className="entry-overlay">상세 보기</div>
-      </button>
-    );
-  };
-
   const renderEntryCards = (list, source, showGrade = false) => (
     <div className="entry-list">
       {list.map((entry) => (
@@ -1392,7 +1557,7 @@ export default function App() {
                 <div className="placeholder-icon">{getFileTypeBadge(entry)}</div>
                 <div className="placeholder-title">{entry.topic}</div>
                 <div className="placeholder-subtitle">
-                  링크형 자료 · 기본 표지 표시
+                  대표 이미지가 없어서 기본 표지를 보여주고 있어요.
                 </div>
               </div>
             )}
@@ -1411,6 +1576,7 @@ export default function App() {
 
             <div className="tag-row">
               <span className="tag-chip">{getFileTypeBadge(entry)}</span>
+              {entry.fileName ? <span className="tag-chip">{entry.fileName}</span> : null}
             </div>
 
             {entry.description ? (
@@ -1543,8 +1709,8 @@ export default function App() {
         </div>
 
         <div className="home-note">
-          이 버전은 무료 운영을 위해 자료 자체 업로드 대신 링크 등록 방식으로 동작합니다.
-          원본 파일은 상세 화면에서 외부 링크로 열립니다.
+          학생이 직접 파일을 업로드하면 원본 파일은 Firebase Storage에 저장되고,
+          제목·설명·해시태그 같은 정보는 Firestore에 저장됩니다.
         </div>
       </div>
     </div>
@@ -1639,7 +1805,7 @@ export default function App() {
         <div className="headline-box">
           <h2>성과 자료 등록</h2>
           <p>
-            학번, 이름, 탐구주제, 설명, 자료 링크를 입력하면 목록 화면에 바로 반영됩니다.
+            학번, 이름, 탐구주제, 설명을 입력하고 원본 파일을 올리면 목록 화면에 바로 반영됩니다.
           </p>
         </div>
 
@@ -1726,36 +1892,61 @@ export default function App() {
         </div>
 
         <div className="field-group">
-          <label className="field-label">자료 링크</label>
+          <label className="field-label">원본 파일 업로드</label>
           <input
             className="field-input"
-            value={fileUrl}
-            onChange={(e) => setFileUrl(e.target.value)}
-            placeholder="Google Drive, OneDrive, PDF 공개 링크 등을 입력하세요"
+            style={{ paddingTop: 14, paddingBottom: 14, height: "auto" }}
+            type="file"
+            accept={getAcceptByMaterialType(materialType)}
+            onChange={(e) => {
+              const file = e.target.files?.[0] || null;
+              setUploadFile(file);
+              if (materialType === "other" && file) {
+                setMaterialType(inferMaterialType(file));
+              }
+            }}
           />
           <div className="helper-text">
-            학생들은 이 링크를 눌러 원본 자료로 이동합니다.
+            권장 최대 용량: {MAX_MAIN_FILE_MB}MB · 학생이 실제로 내려받을 원본 파일입니다.
+          </div>
+
+          <div className="upload-info">
+            {uploadFile
+              ? `선택된 파일: ${uploadFile.name} (${formatFileSize(uploadFile.size)})`
+              : "아직 선택된 원본 파일이 없어요."}
           </div>
         </div>
 
         <div className="field-group">
-          <label className="field-label">대표 이미지 링크 (선택)</label>
+          <label className="field-label">표지 이미지 업로드 (선택)</label>
           <input
             className="field-input"
-            value={coverImageUrl}
-            onChange={(e) => setCoverImageUrl(e.target.value)}
-            placeholder="표지로 쓸 이미지 주소가 있으면 입력하세요"
+            style={{ paddingTop: 14, paddingBottom: 14, height: "auto" }}
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0] || null;
+              setCoverFile(file);
+            }}
           />
           <div className="helper-text">
-            이미지 자료는 비워두면 자료 링크를 표지처럼 사용합니다. 한글파일, PPT, DOCX는 대표 이미지 링크를 넣으면 카드가 더 예쁘게 보입니다.
+            PDF를 올리고 표지를 따로 안 넣으면 첫 페이지를 자동으로 표지 이미지로 만듭니다.
+            표지 이미지를 따로 넣으면 그 이미지가 우선합니다.
+          </div>
+
+          <div className="upload-info">
+            {coverFile
+              ? `선택된 표지: ${coverFile.name} (${formatFileSize(coverFile.size)})`
+              : "표지 이미지를 안 넣으면 이미지 파일은 원본이 표지가 되고, PDF는 첫 페이지가 자동 표지로 들어갑니다."}
           </div>
         </div>
 
+        {uploadStatus ? <div className="upload-info">{uploadStatus}</div> : null}
         {errorMessage ? <div className="error-box">{errorMessage}</div> : null}
 
         <div className="upload-info">
-          이 버전은 무료 운영을 위해 파일 자체를 저장하지 않고 링크만 보관합니다.
-          작성한 사람은 자기 자료를 삭제할 수 있고, 관리자 UID를 넣은 너는 모든 자료를 삭제할 수 있습니다.
+          이 버전은 원본 파일을 직접 저장합니다.
+          작성자는 자기 자료를 삭제할 수 있고, 관리자 UID를 가진 운영자는 모든 자료를 삭제할 수 있습니다.
         </div>
 
         <div className="footer-actions">
@@ -1820,7 +2011,7 @@ export default function App() {
             <div>
               <div className="page-title">탐구 상세 정보</div>
               <div className="page-subtitle">
-                설명, 해시태그, 좋아요, 조회수, 원본 자료 링크를 확인할 수 있습니다.
+                설명, 해시태그, 좋아요, 조회수, 원본 파일 다운로드를 확인할 수 있습니다.
               </div>
             </div>
           </div>
@@ -1872,6 +2063,14 @@ export default function App() {
                     <strong>자료 형식</strong>
                     <span>{getFileTypeBadge(selectedEntry)}</span>
                   </div>
+                  <div className="detail-meta-item">
+                    <strong>파일 이름</strong>
+                    <span>{selectedEntry.fileName || "-"}</span>
+                  </div>
+                  <div className="detail-meta-item">
+                    <strong>파일 크기</strong>
+                    <span>{formatFileSize(selectedEntry.fileSize)}</span>
+                  </div>
                 </div>
 
                 <div className="detail-description-box">
@@ -1893,13 +2092,6 @@ export default function App() {
                     </div>
                   </div>
                 ) : null}
-
-                <div className="detail-description-box">
-                  <span className="detail-section-title">원본 자료 링크</span>
-                  <div className="detail-description-text">
-                    {selectedEntry.fileUrl}
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -1920,7 +2112,7 @@ export default function App() {
               className="footer-button primary"
               onClick={() => openExternalUrl(selectedEntry.fileUrl)}
             >
-              자료 열기
+              자료 다운로드
             </button>
 
             {deletable ? (
@@ -1961,9 +2153,9 @@ export default function App() {
               </div>
 
               <div className="feature-card">
-                <strong>무료 링크형 자료 등록</strong>
+                <strong>파일 직접 업로드 + 표지 자동 처리</strong>
                 <span>
-                  Firebase Storage 없이도 Google Drive, OneDrive, 공개 PDF 링크 등을 등록해 무료로 운영할 수 있도록 설계했습니다.
+                  원본 파일은 Storage에 저장되고, 이미지 파일은 그대로 표지가 되며, PDF는 표지를 따로 넣지 않으면 첫 페이지가 자동 표지로 생성됩니다.
                 </span>
               </div>
 
