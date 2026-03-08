@@ -330,7 +330,7 @@ const css = `
     width: 38px;
     height: 38px;
     border-radius: 14px;
-    background: linear-gradient(135deg, #214055 0%, #2f5b63 100%);
+    background: linear-gradient(135deg, #1f3a5f 0%, #3b6ea8 100%);
     color: white;
     display: flex;
     align-items: center;
