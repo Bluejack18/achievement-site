@@ -436,7 +436,9 @@ const css = `
   font-weight: 800;
   letter-spacing: -0.03em;
   box-shadow: 0 18px 30px rgba(50, 90, 150, 0.25);
-}
+    cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+  margin-bottom: 24px;
 }
 
 .primary-button:hover {
@@ -494,7 +496,8 @@ const css = `
   font-weight: 800;
   letter-spacing: -0.03em;
   box-shadow: 0 12px 24px rgba(50, 90, 150, 0.18);
-}
+   cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
 }
 
   .grade-button:hover,
