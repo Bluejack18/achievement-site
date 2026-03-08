@@ -1,5 +1,12 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInAnonymously,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -26,4 +33,14 @@ export async function ensureAnonymousAuth() {
 
 export function watchAuth(callback) {
   return onAuthStateChanged(auth, callback);
+}
+
+export async function signInAdminWithGoogle() {
+  const provider = new GoogleAuthProvider();
+  const credential = await signInWithPopup(auth, provider);
+  return credential.user;
+}
+
+export async function signOutUser() {
+  await signOut(auth);
 }

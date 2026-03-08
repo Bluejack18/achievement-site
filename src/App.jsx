@@ -18,11 +18,18 @@ import {
 } from "firebase/storage";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { db, storage, ensureAnonymousAuth, watchAuth } from "./firebase";
+import {
+  db,
+  storage,
+  ensureAnonymousAuth,
+  watchAuth,
+  signInAdminWithGoogle,
+  signOutUser,
+} from "./firebase";
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
 
-const ADMIN_UID = "maoNxlKaavR1mKEKeCmbKddZVIn2";
+const ADMIN_EMAILS = ["lulu212518@gmail.com"];
 const MAX_MAIN_FILE_MB = 30;
 const MAX_COVER_FILE_MB = 8;
 
@@ -1232,10 +1239,10 @@ export default function App() {
     return (entry.likedBy || []).includes(currentUser.uid);
   };
 
-  const canDeleteEntry = (entry) => {
-    if (!currentUser) return false;
-    return currentUser.uid === entry.authorUid || currentUser.uid === ADMIN_UID;
-  };
+ const canDeleteEntry = (entry) => {
+  if (!currentUser) return false;
+  return currentUser.uid === entry.authorUid || isAdminUser(currentUser);
+};
 
   const resetUploadForm = () => {
     setUploadGrade(selectedGrade || 1);
@@ -1618,15 +1625,29 @@ export default function App() {
     <div className="phone-shell">
       <div className="phone-inner">
         <div className="topbar">
-          <div className="brand-group">
-            <div className="brand-mark">A</div>
-            <div>
-              <div className="brand-title">Achievement Archive</div>
-              <div className="brand-subtitle">탐구 · 실험 · 제작 기록 공유</div>
-            </div>
-          </div>
-          <div className="grade-pill">OPEN</div>
-        </div>
+  <div className="brand-group">
+    <div className="brand-mark">A</div>
+    <div>
+      <div className="brand-title">Achievement Archive</div>
+      <div className="brand-subtitle">탐구 · 실험 · 제작 기록 공유</div>
+    </div>
+  </div>
+
+  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    {isAdminUser(currentUser) ? (
+      <>
+        <div className="grade-pill">관리자</div>
+        <button className="ghost-button" onClick={handleAdminLogout}>
+          로그아웃
+        </button>
+      </>
+    ) : (
+      <button className="ghost-button" onClick={handleAdminLogin}>
+        관리자 로그인
+      </button>
+    )}
+  </div>
+</div>
 
         <div className="headline-box">
           <h2>
@@ -1720,17 +1741,33 @@ export default function App() {
     <div className="phone-shell">
       <div className="phone-inner">
         <div className="topbar">
-          <div className="brand-group">
-            <div className="brand-mark">A</div>
-            <div>
-              <div className="brand-title">Achievement Archive</div>
-              <div className="brand-subtitle">{selectedGrade}학년 아카이브</div>
-            </div>
-          </div>
-          <button className="ghost-button" onClick={openUploadPage}>
-            업로드
-          </button>
-        </div>
+  <div className="brand-group">
+    <div className="brand-mark">A</div>
+    <div>
+      <div className="brand-title">Achievement Archive</div>
+      <div className="brand-subtitle">{selectedGrade}학년 아카이브</div>
+    </div>
+  </div>
+
+  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    {isAdminUser(currentUser) ? (
+      <>
+        <div className="grade-pill">관리자</div>
+        <button className="ghost-button" onClick={handleAdminLogout}>
+          로그아웃
+        </button>
+      </>
+    ) : (
+      <button className="ghost-button" onClick={handleAdminLogin}>
+        관리자 로그인
+      </button>
+    )}
+
+    <button className="ghost-button" onClick={openUploadPage}>
+      업로드
+    </button>
+  </div>
+</div>
 
         <div className="page-header-row">
           <div>
@@ -2001,15 +2038,19 @@ export default function App() {
       <div className="phone-shell">
         <div className="phone-inner">
           <div className="topbar">
-            <div className="brand-group">
-              <div className="brand-mark">A</div>
-              <div>
-                <div className="brand-title">Achievement Archive</div>
-                <div className="brand-subtitle">상세 보기</div>
-              </div>
-            </div>
-            <div className="grade-pill">상세</div>
-          </div>
+  <div className="brand-group">
+    <div className="brand-mark">A</div>
+    <div>
+      <div className="brand-title">Achievement Archive</div>
+      <div className="brand-subtitle">상세 보기</div>
+    </div>
+  </div>
+
+  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    {isAdminUser(currentUser) ? <div className="grade-pill">관리자</div> : null}
+    <div className="grade-pill">상세</div>
+  </div>
+</div>
 
           <div className="page-header-row">
             <div>
