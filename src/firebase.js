@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "여기에_복붙",
-  authDomain: "여기에_복붙",
-  projectId: "여기에_복붙",
-  storageBucket: "여기에_복붙",
-  messagingSenderId: "여기에_복붙",
-  appId: "여기에_복붙",
+  apiKey: "....",
+  authDomain: "....firebaseapp.com",
+  projectId: "....",
+  storageBucket: "....",
+  messagingSenderId: "....",
+  appId: "...."
 };
 
 const app = initializeApp(firebaseConfig);
