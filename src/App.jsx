@@ -7,20 +7,15 @@ import {
   doc,
   increment,
   onSnapshot,
+  runTransaction,
+  serverTimestamp,
   setDoc,
   updateDoc,
 } from "firebase/firestore";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import {
-  db,
-  storage,
-  ensureAnonymousAuth,
-  watchAuth,
-  signInWithGoogle,
-  signOutUser,
-} from "./firebase";
+import { db, storage, watchAuth, signInWithGoogle, signOutUser } from "./firebase";
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -68,8 +63,8 @@ function normalizeEntry(entry) {
       typeof entry?.createdAt === "number"
         ? entry.createdAt
         : entry?.createdAt?.seconds
-        ? entry.createdAt.seconds * 1000
-        : Date.now(),
+          ? entry.createdAt.seconds * 1000
+          : Date.now(),
   };
 }
 
@@ -945,6 +940,30 @@ const css = `
     color: #a64534;
     font-size: 13px;
     line-height: 1.7;
+    white-space: pre-wrap;
+  }
+
+  .warning-box {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(255, 248, 230, 0.96);
+    border: 1px solid rgba(201, 153, 32, 0.22);
+    color: #8a6508;
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+  }
+
+  .success-box {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(237, 250, 241, 0.96);
+    border: 1px solid rgba(54, 141, 77, 0.18);
+    color: #2f7c46;
+    font-size: 13px;
+    line-height: 1.7;
   }
 
   .upload-info {
@@ -965,6 +984,27 @@ const css = `
     font-size: 12px;
     line-height: 1.7;
     font-weight: 600;
+  }
+
+  .auth-bottom-box {
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 18px;
+    background: rgba(255,255,255,0.76);
+    border: 1px solid rgba(31, 54, 92, 0.08);
+  }
+
+  .auth-bottom-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .auth-bottom-row .ghost-button {
+    flex: 1;
+    min-width: 120px;
+    height: 46px;
+    border-radius: 16px;
   }
 
   .detail-scroll {
@@ -1155,12 +1195,6 @@ export default function App() {
       setAuthReady(true);
     });
 
-    ensureAnonymousAuth().catch((error) => {
-      console.error(error);
-      setErrorMessage("사용자 식별을 준비하는 중 문제가 생겼어요. 페이지를 새로고침해 주세요.");
-      setAuthReady(true);
-    });
-
     return () => unsubscribe();
   }, []);
 
@@ -1241,6 +1275,21 @@ export default function App() {
     return isSchoolEmail(user.email);
   };
 
+  const todayUploadCount = useMemo(() => {
+    if (!currentUser?.email) return 0;
+
+    const email = String(currentUser.email).toLowerCase();
+    const todayKey = getKstDateKey(Date.now());
+
+    return entries.filter(
+      (entry) =>
+        String(entry.authorEmail || "").toLowerCase() === email &&
+        getKstDateKey(entry.createdAt) === todayKey
+    ).length;
+  }, [entries, currentUser]);
+
+  const remainingUploadCount = Math.max(0, MAX_UPLOADS_PER_DAY - todayUploadCount);
+
   const isLikedByCurrentUser = (entry) => {
     if (!currentUser) return false;
     return (entry.likedBy || []).includes(currentUser.uid);
@@ -1262,9 +1311,7 @@ export default function App() {
 
       if (!isAdmin && !isSchool) {
         await signOutUser();
-        await ensureAnonymousAuth();
         setErrorMessage(`학교 계정(${SCHOOL_EMAIL_DOMAIN}) 또는 관리자 계정으로 로그인해 주세요.`);
-        return;
       }
     } catch (error) {
       console.error(error);
@@ -1276,7 +1323,6 @@ export default function App() {
     try {
       setErrorMessage("");
       await signOutUser();
-      await ensureAnonymousAuth();
     } catch (error) {
       console.error(error);
       setErrorMessage("로그아웃 중 문제가 생겼어요.");
@@ -1354,7 +1400,7 @@ export default function App() {
 
   const toggleLike = async (entry) => {
     if (!currentUser) {
-      setErrorMessage("사용자 식별이 아직 준비되지 않았어요. 잠시 후 다시 시도해 주세요.");
+      setErrorMessage("좋아요는 로그인 후 이용할 수 있어요.");
       return;
     }
 
@@ -1414,12 +1460,32 @@ export default function App() {
       return "학번, 이름, 탐구주제, 간단한 설명, 원본 파일을 모두 입력해야 등록할 수 있어요.";
     }
 
+    if (!currentUser) {
+      return `현재 학교 계정으로 로그인되어 있지 않아요.
+화면 아래 로그인 버튼을 눌러 학교 계정(${SCHOOL_EMAIL_DOMAIN})으로 로그인한 뒤 다시 업로드해 주세요.`;
+    }
+
+    const email = String(currentUser.email || "").toLowerCase();
+    const isAdmin = ADMIN_EMAILS.includes(email);
+    const isSchool = isSchoolEmail(email);
+
+    if (!isAdmin && !isSchool) {
+      return `현재 학교 계정으로 로그인되어 있지 않아요.
+화면 아래 로그인/로그아웃 버튼으로 로그아웃한 뒤 학교 계정(${SCHOOL_EMAIL_DOMAIN})으로 다시 로그인해 주세요.`;
+    }
+
     if (uploadFile.size > MAX_MAIN_FILE_MB * 1024 * 1024) {
       return `원본 파일은 ${MAX_MAIN_FILE_MB}MB 이하만 업로드할 수 있어요.`;
     }
 
     if (coverFile && coverFile.size > MAX_COVER_FILE_MB * 1024 * 1024) {
       return `표지 이미지는 ${MAX_COVER_FILE_MB}MB 이하만 업로드할 수 있어요.`;
+    }
+
+    if (!isAdmin && todayUploadCount >= MAX_UPLOADS_PER_DAY) {
+      return `오늘은 이미 ${MAX_UPLOADS_PER_DAY}번 업로드했어요.
+하루 최대 ${MAX_UPLOADS_PER_DAY}번까지 업로드할 수 있습니다.
+내일 다시 업로드해 주세요.`;
     }
 
     return "";
@@ -1432,51 +1498,12 @@ export default function App() {
       return;
     }
 
-    let uploadUser = currentUser;
-
-    const uploadEmailNow = String(uploadUser?.email || "").toLowerCase();
-    const userIsAdmin = ADMIN_EMAILS.includes(uploadEmailNow);
-    const userIsSchool = isSchoolEmail(uploadEmailNow);
-
-    if (!userIsAdmin && !userIsSchool) {
-      try {
-        setErrorMessage("");
-        setUploadStatus("로그인 확인 중...");
-        uploadUser = await signInWithGoogle();
-
-        const reloginEmail = String(uploadUser?.email || "").toLowerCase();
-        const reloginAdmin = ADMIN_EMAILS.includes(reloginEmail);
-        const reloginSchool = isSchoolEmail(reloginEmail);
-
-        if (!reloginAdmin && !reloginSchool) {
-          await signOutUser();
-          await ensureAnonymousAuth();
-          setUploadStatus("");
-          setErrorMessage(`업로드는 학교 계정(${SCHOOL_EMAIL_DOMAIN}) 또는 관리자 계정으로만 로그인할 수 있어요.`);
-          return;
-        }
-      } catch (error) {
-        console.error(error);
-        setUploadStatus("");
-        setErrorMessage("구글 로그인 중 문제가 생겼어요. 다시 시도해 주세요.");
-        return;
-      }
-    }
-
+    const uploadUser = currentUser;
     const uploadEmail = String(uploadUser?.email || "").toLowerCase();
     const isAdminAccount = ADMIN_EMAILS.includes(uploadEmail);
-
-    const todayUploadCount = entries.filter(
-      (entry) =>
-        String(entry.authorEmail || "").toLowerCase() === uploadEmail &&
-        getKstDateKey(entry.createdAt) === getKstDateKey(Date.now())
-    ).length;
-
-    if (!isAdminAccount && todayUploadCount >= MAX_UPLOADS_PER_DAY) {
-      setUploadStatus("");
-      setErrorMessage(`학교 계정 1개당 하루 최대 ${MAX_UPLOADS_PER_DAY}번까지만 업로드할 수 있어요.`);
-      return;
-    }
+    const todayKey = getKstDateKey(Date.now());
+    const counterId = `${todayKey}__${uploadEmail.replace(/[.#$/[\]]/g, "_")}`;
+    const counterRef = doc(db, "uploadCounters", counterId);
 
     const uploadedPaths = [];
 
@@ -1484,6 +1511,26 @@ export default function App() {
       setIsSaving(true);
       setErrorMessage("");
       setUploadStatus("업로드 중...");
+
+      await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(counterRef);
+        const currentCount = snap.exists() ? Number(snap.data()?.count || 0) : 0;
+
+        if (!isAdminAccount && currentCount >= MAX_UPLOADS_PER_DAY) {
+          throw new Error("UPLOAD_LIMIT_EXCEEDED");
+        }
+
+        transaction.set(
+          counterRef,
+          {
+            email: uploadEmail,
+            dateKey: todayKey,
+            count: currentCount + 1,
+            lastUploadAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      });
 
       const entryRef = doc(collection(db, "entries"));
       const finalType = inferMaterialType(uploadFile);
@@ -1578,6 +1625,7 @@ export default function App() {
         fileSize: uploadFile.size,
       });
 
+      setUploadStatus("업로드가 완료되었어요.");
       setSelectedGrade(Number(uploadGrade));
       setGradeSearchText("");
       resetUploadForm();
@@ -1589,7 +1637,18 @@ export default function App() {
         await Promise.allSettled(uploadedPaths.map((path) => deleteObject(ref(storage, path))));
       }
 
-      setErrorMessage("자료 등록 중 문제가 생겼어요. 설정을 다시 확인해 주세요.");
+      if (error?.message === "UPLOAD_LIMIT_EXCEEDED") {
+        setErrorMessage(
+          `오늘은 이미 ${MAX_UPLOADS_PER_DAY}번 업로드했어요.
+하루 최대 ${MAX_UPLOADS_PER_DAY}번까지 업로드할 수 있습니다.
+내일 다시 업로드해 주세요.`
+        );
+      } else {
+        setErrorMessage(
+          `업로드에 실패했어요.
+화면 아래 로그인/로그아웃 버튼으로 로그아웃한 뒤 학교 계정(${SCHOOL_EMAIL_DOMAIN})으로 다시 로그인해서 시도해 주세요.`
+        );
+      }
     } finally {
       setIsSaving(false);
       setUploadStatus("");
@@ -1722,6 +1781,44 @@ export default function App() {
           업로드
         </button>
       ) : null}
+    </div>
+  );
+
+  const renderUploadAuthBottom = () => (
+    <div className="auth-bottom-box">
+      <div className="subtle-note">
+        업로드는 학교 계정({SCHOOL_EMAIL_DOMAIN}) 또는 관리자 계정으로만 가능합니다.
+      </div>
+      <div className="subtle-note">
+        학교 계정은 하루 최대 {MAX_UPLOADS_PER_DAY}회 업로드할 수 있어요.
+      </div>
+
+      {currentUser?.email ? (
+        <div className="upload-info" style={{ marginTop: 10 }}>
+          현재 로그인: {currentUser.email}
+        </div>
+      ) : (
+        <div className="warning-box">
+          현재 로그인된 계정이 없어요.
+          학교 계정({SCHOOL_EMAIL_DOMAIN})으로 로그인한 뒤 업로드해 주세요.
+        </div>
+      )}
+
+      <div className="auth-bottom-row" style={{ marginTop: 12 }}>
+        {!currentUser ? (
+          <button className="ghost-button" onClick={handleLogin}>
+            로그인
+          </button>
+        ) : (
+          <button className="ghost-button" onClick={handleLogout}>
+            로그아웃
+          </button>
+        )}
+
+        <button className="ghost-button" onClick={handleLogin}>
+          학교 계정으로 다시 로그인
+        </button>
+      </div>
     </div>
   );
 
@@ -1899,11 +1996,7 @@ export default function App() {
 
         <div className="headline-box">
           <h2>성과 자료 등록</h2>
-          <p>첫 화면에서 미리 로그인할 수 있고, 업로드는 학교 계정 또는 관리자 계정으로만 가능합니다.</p>
-          <div className="subtle-note">
-            학교 계정({SCHOOL_EMAIL_DOMAIN}) 또는 관리자 계정으로 로그인해 주세요.
-            학교 계정은 하루 최대 {MAX_UPLOADS_PER_DAY}회 업로드할 수 있습니다.
-          </div>
+          <p>업로드는 학교 계정 또는 관리자 계정으로만 가능합니다.</p>
         </div>
 
         <div className="field-group">
@@ -2004,6 +2097,20 @@ export default function App() {
           <div className="upload-info">{coverFile ? coverFile.name : "선택된 파일 없음"}</div>
         </div>
 
+        {currentUser && !isAdminUser(currentUser) && isSchoolAccountUser(currentUser) ? (
+          todayUploadCount >= MAX_UPLOADS_PER_DAY ? (
+            <div className="warning-box">
+              오늘 업로드 횟수: {todayUploadCount}/{MAX_UPLOADS_PER_DAY}
+              {"\n"}하루 최대 업로드 횟수를 초과했어요. 내일 다시 업로드해 주세요.
+            </div>
+          ) : (
+            <div className="success-box">
+              오늘 업로드 횟수: {todayUploadCount}/{MAX_UPLOADS_PER_DAY}
+              {"\n"}남은 업로드 가능 횟수: {remainingUploadCount}회
+            </div>
+          )
+        ) : null}
+
         {uploadStatus ? <div className="upload-info">{uploadStatus}</div> : null}
         {errorMessage ? <div className="error-box">{errorMessage}</div> : null}
 
@@ -2028,6 +2135,15 @@ export default function App() {
             {isSaving ? "업로드 중" : !authReady ? "페이지 준비 중..." : "업로드하기"}
           </button>
         </div>
+
+        <div className="subtle-note">
+          업로드는 학교 계정({SCHOOL_EMAIL_DOMAIN})으로 로그인한 상태에서만 가능합니다.
+        </div>
+        <div className="subtle-note">
+          학교 계정은 하루 최대 {MAX_UPLOADS_PER_DAY}회 업로드할 수 있어요.
+        </div>
+
+        {renderUploadAuthBottom()}
       </div>
     </div>
   );
@@ -2181,30 +2297,28 @@ export default function App() {
         <div className="archive-wrap">
           <div className="hero-copy">
             <div className="hero-kicker">KSHS RESEARCH ARCHIVE</div>
-
             <h1 className="hero-title">
-              강원과학고 학생들의 탐구 성과를
+              탐구 결과를
               <br />
-              기록하고 나누는 공간
+              오래 남기고 함께 보는 공간
             </h1>
-
             <div className="hero-description">
-              학년별 자료를 정리해 보고, 전체 검색으로 필요한 탐구 기록을 빠르게 찾을 수 있습니다.
-              업로드와 삭제는 로그인 상태에 따라 바로 처리할 수 있어요.
+              수행평가로 끝내기 아쉬운 탐구, 혼자 보기 아까운 실험 결과, 후배들에게도 도움이 될 자료를
+              차곡차곡 모아두는 아카이브입니다.
             </div>
 
             <div className="feature-list">
               <div className="feature-card">
-                <strong>학년별 정리</strong>
-                <span>1학년, 2학년, 3학년 자료를 나누어 모아볼 수 있습니다.</span>
+                <strong>학년별 분류</strong>
+                <span>1학년, 2학년, 3학년 자료를 나눠서 보고 검색할 수 있어요.</span>
               </div>
               <div className="feature-card">
-                <strong>통합 검색</strong>
-                <span>이름, 학번, 주제, 설명, 해시태그로 전체 자료를 한 번에 찾을 수 있습니다.</span>
+                <strong>대표 이미지와 파일 보관</strong>
+                <span>이미지, PDF, HWP, PPT, DOC 파일을 업로드하고 보관할 수 있어요.</span>
               </div>
               <div className="feature-card">
-                <strong>로그인 후 바로 관리</strong>
-                <span>첫 화면에서 로그인 후 업로드와 삭제를 더 편하게 할 수 있습니다.</span>
+                <strong>학교 계정 기반 업로드</strong>
+                <span>학교 계정 로그인 후에만 업로드할 수 있고, 하루 업로드 횟수 제한도 적용됩니다.</span>
               </div>
             </div>
           </div>
