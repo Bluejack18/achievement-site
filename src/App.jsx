@@ -1461,17 +1461,15 @@ export default function App() {
     }
 
     if (!currentUser) {
-      return `현재 학교 계정으로 로그인되어 있지 않아요.
-화면 아래 로그인 버튼을 눌러 학교 계정(${SCHOOL_EMAIL_DOMAIN})으로 로그인한 뒤 다시 업로드해 주세요.`;
-    }
+     return `학교 계정(${SCHOOL_EMAIL_DOMAIN})으로 로그인한 뒤 업로드해 주세요.`;
+}
 
     const email = String(currentUser.email || "").toLowerCase();
     const isAdmin = ADMIN_EMAILS.includes(email);
     const isSchool = isSchoolEmail(email);
 
     if (!isAdmin && !isSchool) {
-      return `현재 학교 계정으로 로그인되어 있지 않아요.
-화면 아래 로그인/로그아웃 버튼으로 로그아웃한 뒤 학교 계정(${SCHOOL_EMAIL_DOMAIN})으로 다시 로그인해 주세요.`;
+    return `학교 계정(${SCHOOL_EMAIL_DOMAIN})으로 로그인한 뒤 업로드해 주세요.`;
     }
 
     if (uploadFile.size > MAX_MAIN_FILE_MB * 1024 * 1024) {
@@ -1784,43 +1782,27 @@ export default function App() {
     </div>
   );
 
-  const renderUploadAuthBottom = () => (
-    <div className="auth-bottom-box">
-      <div className="subtle-note">
-        업로드는 학교 계정({SCHOOL_EMAIL_DOMAIN}) 또는 관리자 계정으로만 가능합니다.
-      </div>
-      <div className="subtle-note">
-        학교 계정은 하루 최대 {MAX_UPLOADS_PER_DAY}회 업로드할 수 있어요.
-      </div>
-
-      {currentUser?.email ? (
-        <div className="upload-info" style={{ marginTop: 10 }}>
-          현재 로그인: {currentUser.email}
-        </div>
+const renderUploadAuthBottom = () => (
+  <div className="auth-bottom-box">
+    <div className="auth-bottom-row">
+      {!currentUser ? (
+        <button className="ghost-button" onClick={handleLogin}>
+          로그인
+        </button>
       ) : (
-        <div className="warning-box">
-          현재 로그인된 계정이 없어요.
-          학교 계정({SCHOOL_EMAIL_DOMAIN})으로 로그인한 뒤 업로드해 주세요.
-        </div>
-      )}
+        <>
+      <div className="upload-info auth-email-box">
+     {currentUser.email}
+     </div>
 
-      <div className="auth-bottom-row" style={{ marginTop: 12 }}>
-        {!currentUser ? (
-          <button className="ghost-button" onClick={handleLogin}>
-            로그인
-          </button>
-        ) : (
           <button className="ghost-button" onClick={handleLogout}>
             로그아웃
           </button>
-        )}
-
-        <button className="ghost-button" onClick={handleLogin}>
-          학교 계정으로 다시 로그인
-        </button>
-      </div>
+        </>
+      )}
     </div>
-  );
+  </div>
+);
 
   const renderHome = () => (
     <div className="phone-shell">
@@ -2112,7 +2094,6 @@ export default function App() {
         ) : null}
 
         {uploadStatus ? <div className="upload-info">{uploadStatus}</div> : null}
-        {errorMessage ? <div className="error-box">{errorMessage}</div> : null}
 
         <div className="footer-actions">
           <button
@@ -2136,14 +2117,11 @@ export default function App() {
           </button>
         </div>
 
-        <div className="subtle-note">
-          업로드는 학교 계정({SCHOOL_EMAIL_DOMAIN})으로 로그인한 상태에서만 가능합니다.
-        </div>
-        <div className="subtle-note">
-          학교 계정은 하루 최대 {MAX_UPLOADS_PER_DAY}회 업로드할 수 있어요.
-        </div>
 
         {renderUploadAuthBottom()}
+
+        {errorMessage ? <div className="error-box">{errorMessage}</div> : null}
+        
       </div>
     </div>
   );
