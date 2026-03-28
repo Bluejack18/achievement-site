@@ -1644,7 +1644,7 @@ export default function App() {
       } else {
         setErrorMessage(
           `업로드에 실패했어요.
-화면 아래 로그인/로그아웃 버튼으로 로그아웃한 뒤 학교 계정(${SCHOOL_EMAIL_DOMAIN})으로 다시 로그인해서 시도해 주세요.`
+로그아웃한 뒤 학교 계정(${SCHOOL_EMAIL_DOMAIN})으로 다시 로그인해서 시도해 주세요.`
         );
       }
     } finally {
