@@ -1510,26 +1510,6 @@ export default function App() {
       setErrorMessage("");
       setUploadStatus("업로드 중...");
 
-      await runTransaction(db, async (transaction) => {
-        const snap = await transaction.get(counterRef);
-        const currentCount = snap.exists() ? Number(snap.data()?.count || 0) : 0;
-
-        if (!isAdminAccount && currentCount >= MAX_UPLOADS_PER_DAY) {
-          throw new Error("UPLOAD_LIMIT_EXCEEDED");
-        }
-
-        transaction.set(
-          counterRef,
-          {
-            email: uploadEmail,
-            dateKey: todayKey,
-            count: currentCount + 1,
-            lastUploadAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      });
-
       const entryRef = doc(collection(db, "entries"));
       const finalType = inferMaterialType(uploadFile);
       const basePath = `entries/${entryRef.id}`;
@@ -1621,6 +1601,26 @@ export default function App() {
         coverPath: finalCoverPath,
         fileName: uploadFile.name,
         fileSize: uploadFile.size,
+      });
+
+           await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(counterRef);
+        const currentCount = snap.exists() ? Number(snap.data()?.count || 0) : 0;
+
+        if (!isAdminAccount && currentCount >= MAX_UPLOADS_PER_DAY) {
+          throw new Error("UPLOAD_LIMIT_EXCEEDED");
+        }
+
+        transaction.set(
+          counterRef,
+          {
+            email: uploadEmail,
+            dateKey: todayKey,
+            count: currentCount + 1,
+            lastUploadAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
       });
 
       setUploadStatus("업로드가 완료되었어요.");
