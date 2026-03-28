@@ -44,3 +44,4 @@ export async function signInAdminWithGoogle() {
 export async function signOutUser() {
   await signOut(auth);
 }
+export { signInAdminWithGoogle as signInWithGoogle };

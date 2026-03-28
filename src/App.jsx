@@ -18,15 +18,17 @@ import {
   storage,
   ensureAnonymousAuth,
   watchAuth,
-  signInAdminWithGoogle,
+  signInWithGoogle,
   signOutUser,
 } from "./firebase";
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const ADMIN_EMAILS = ["lulu212518@gmail.com"];
-const MAX_MAIN_FILE_MB = 30;
-const MAX_COVER_FILE_MB = 8;
+const SCHOOL_EMAIL_DOMAIN = "@gw1.kr";
+const MAX_MAIN_FILE_MB = 10;
+const MAX_COVER_FILE_MB = 3;
+const MAX_UPLOADS_PER_DAY = 3;
 
 function parseHashtags(value) {
   if (!value) return [];
@@ -57,6 +59,7 @@ function normalizeEntry(entry) {
     likedBy: Array.isArray(entry?.likedBy) ? entry.likedBy : [],
     views: Number(entry?.views) || 0,
     authorUid: entry?.authorUid || "",
+    authorEmail: entry?.authorEmail || "",
     filePath: entry?.filePath || "",
     coverPath: entry?.coverPath || "",
     fileName: entry?.fileName || "",
@@ -110,6 +113,25 @@ function formatStudentLabel(entry) {
   return `${entry.studentId} ${entry.name}/${entry.topic}`;
 }
 
+function isSchoolEmail(email) {
+  return String(email || "")
+    .toLowerCase()
+    .endsWith(SCHOOL_EMAIL_DOMAIN);
+}
+
+function getKstDateKey(timestamp = Date.now()) {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(timestamp));
+  } catch {
+    return new Date(timestamp).toISOString().slice(0, 10);
+  }
+}
+
 function getDisplayCoverUrl(entry) {
   if (entry.coverImageUrl) return entry.coverImageUrl;
   if (entry.materialType === "image") return entry.fileUrl;
@@ -146,23 +168,6 @@ function formatFileSize(bytes) {
   if (bytes >= mb) return `${(bytes / mb).toFixed(1)}MB`;
   if (bytes >= kb) return `${Math.round(bytes / kb)}KB`;
   return `${bytes}B`;
-}
-
-function getAcceptByMaterialType(type) {
-  switch (type) {
-    case "pdf":
-      return ".pdf,application/pdf";
-    case "image":
-      return "image/*";
-    case "hwp":
-      return ".hwp,.hwpx";
-    case "ppt":
-      return ".ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation";
-    case "doc":
-      return ".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    default:
-      return "*";
-  }
 }
 
 async function createPdfCoverBlob(pdfFile) {
@@ -425,27 +430,27 @@ const css = `
     margin-bottom: 18px;
   }
 
- .primary-button {
-  width: 100%;
-  height: 110px;
-  border: none;
-  border-radius: 28px;
-  background: linear-gradient(135deg, #314f8a 0%, #4875b8 45%, #86a9da 100%);
-  color: white;
-  font-size: 34px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  box-shadow: 0 18px 30px rgba(50, 90, 150, 0.25);
+  .primary-button {
+    width: 100%;
+    height: 110px;
+    border: none;
+    border-radius: 28px;
+    background: linear-gradient(135deg, #314f8a 0%, #4875b8 45%, #86a9da 100%);
+    color: white;
+    font-size: 34px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    box-shadow: 0 18px 30px rgba(50, 90, 150, 0.25);
     cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
-  margin-bottom: 24px;
-}
+    transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+    margin-bottom: 24px;
+  }
 
-.primary-button:hover {
-  transform: translateY(-2px) scale(1.01);
-  box-shadow: 0 24px 40px rgba(40, 79, 119, 0.28);
-  filter: brightness(1.05);
-}
+  .primary-button:hover {
+    transform: translateY(-2px) scale(1.01);
+    box-shadow: 0 24px 40px rgba(40, 79, 119, 0.28);
+    filter: brightness(1.05);
+  }
 
   .section-card {
     border-radius: 28px;
@@ -486,19 +491,19 @@ const css = `
     grid-template-columns: 1fr 1fr;
   }
 
- .grade-button {
-  height: 88px;
-  border: none;
-  border-radius: 24px;
-  background: linear-gradient(135deg, #355c99 0%, #5a86c8 55%, #98b9e6 100%);
-  color: white;
-  font-size: 30px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  box-shadow: 0 12px 24px rgba(50, 90, 150, 0.18);
-   cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
-}
+  .grade-button {
+    height: 88px;
+    border: none;
+    border-radius: 24px;
+    background: linear-gradient(135deg, #355c99 0%, #5a86c8 55%, #98b9e6 100%);
+    color: white;
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    box-shadow: 0 12px 24px rgba(50, 90, 150, 0.18);
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+  }
 
   .grade-button:hover,
   .ghost-button:hover,
@@ -512,10 +517,10 @@ const css = `
   }
 
   .grade-button:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.06);
-  box-shadow: 0 16px 28px rgba(28, 40, 60, 0.18);
-}
+    transform: translateY(-2px);
+    filter: brightness(1.06);
+    box-shadow: 0 16px 28px rgba(28, 40, 60, 0.18);
+  }
 
   .page-header-row {
     display: flex;
@@ -607,11 +612,11 @@ const css = `
   }
 
   .sort-toggle.active {
-  background: linear-gradient(135deg, #284f77 0%, #3f6fa8 100%);
-  color: white;
-  border: none;
-  box-shadow: 0 14px 24px rgba(40, 79, 119, 0.18);
-}
+    background: linear-gradient(135deg, #284f77 0%, #3f6fa8 100%);
+    color: white;
+    border: none;
+    box-shadow: 0 14px 24px rgba(40, 79, 119, 0.18);
+  }
 
   .list-wrap {
     height: 560px;
@@ -702,18 +707,18 @@ const css = `
   }
 
   .placeholder-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 22px;
-  background: linear-gradient(135deg, #284f77 0%, #3f6fa8 100%);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 14px;
-  box-shadow: 0 12px 24px rgba(40, 79, 119, 0.16);
-}
+    width: 64px;
+    height: 64px;
+    border-radius: 22px;
+    background: linear-gradient(135deg, #284f77 0%, #3f6fa8 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 14px;
+    box-shadow: 0 12px 24px rgba(40, 79, 119, 0.16);
+  }
 
   .placeholder-title {
     font-size: 16px;
@@ -847,12 +852,12 @@ const css = `
     box-shadow: 0 10px 18px rgba(28, 40, 60, 0.04);
   }
 
- .footer-button.primary {
-  background: linear-gradient(135deg, #284f77 0%, #3f6fa8 100%);
-  color: white;
-  border: none;
-  box-shadow: 0 16px 26px rgba(40, 79, 119, 0.18);
-}
+  .footer-button.primary {
+    background: linear-gradient(135deg, #284f77 0%, #3f6fa8 100%);
+    color: white;
+    border: none;
+    box-shadow: 0 16px 26px rgba(40, 79, 119, 0.18);
+  }
 
   .footer-button.danger {
     background: rgba(185, 57, 57, 0.10);
@@ -884,11 +889,11 @@ const css = `
   }
 
   .grade-toggle.active {
-  background: linear-gradient(135deg, #284f77 0%, #3f6fa8 100%);
-  color: white;
-  border: none;
-  box-shadow: 0 14px 24px rgba(40, 79, 119, 0.18);
-}
+    background: linear-gradient(135deg, #284f77 0%, #3f6fa8 100%);
+    color: white;
+    border: none;
+    box-shadow: 0 14px 24px rgba(40, 79, 119, 0.18);
+  }
 
   .field-group {
     margin-bottom: 14px;
@@ -952,6 +957,14 @@ const css = `
     font-size: 13px;
     line-height: 1.8;
     font-weight: 500;
+  }
+
+  .subtle-note {
+    margin-top: 12px;
+    color: #5a687a;
+    font-size: 12px;
+    line-height: 1.7;
+    font-weight: 600;
   }
 
   .detail-scroll {
@@ -1220,7 +1233,12 @@ export default function App() {
 
   const isAdminUser = (user) => {
     if (!user) return false;
-    return !!user.email && ADMIN_EMAILS.includes(user.email);
+    return !!user.email && ADMIN_EMAILS.includes(String(user.email).toLowerCase());
+  };
+
+  const isSchoolAccountUser = (user) => {
+    if (!user) return false;
+    return isSchoolEmail(user.email);
   };
 
   const isLikedByCurrentUser = (entry) => {
@@ -1233,17 +1251,28 @@ export default function App() {
     return currentUser.uid === entry.authorUid || isAdminUser(currentUser);
   };
 
-  const handleAdminLogin = async () => {
+  const handleLogin = async () => {
     try {
       setErrorMessage("");
-      await signInAdminWithGoogle();
+      const user = await signInWithGoogle();
+
+      const email = String(user?.email || "").toLowerCase();
+      const isAdmin = ADMIN_EMAILS.includes(email);
+      const isSchool = isSchoolEmail(email);
+
+      if (!isAdmin && !isSchool) {
+        await signOutUser();
+        await ensureAnonymousAuth();
+        setErrorMessage(`학교 계정(${SCHOOL_EMAIL_DOMAIN}) 또는 관리자 계정으로 로그인해 주세요.`);
+        return;
+      }
     } catch (error) {
       console.error(error);
-      setErrorMessage("관리자 로그인 중 문제가 생겼어요.");
+      setErrorMessage("로그인 중 문제가 생겼어요.");
     }
   };
 
-  const handleAdminLogout = async () => {
+  const handleLogout = async () => {
     try {
       setErrorMessage("");
       await signOutUser();
@@ -1369,7 +1398,6 @@ export default function App() {
 
   const canSubmit =
     authReady &&
-    currentUser &&
     uploadGrade &&
     studentId.trim() &&
     name.trim() &&
@@ -1378,8 +1406,8 @@ export default function App() {
     uploadFile;
 
   const validateUpload = () => {
-    if (!authReady || !currentUser) {
-      return "사용자 식별이 아직 준비되지 않았어요. 잠시 후 다시 시도해 주세요.";
+    if (!authReady) {
+      return "페이지 준비 중이에요. 잠시 후 다시 시도해 주세요.";
     }
 
     if (!canSubmit) {
@@ -1404,6 +1432,52 @@ export default function App() {
       return;
     }
 
+    let uploadUser = currentUser;
+
+    const uploadEmailNow = String(uploadUser?.email || "").toLowerCase();
+    const userIsAdmin = ADMIN_EMAILS.includes(uploadEmailNow);
+    const userIsSchool = isSchoolEmail(uploadEmailNow);
+
+    if (!userIsAdmin && !userIsSchool) {
+      try {
+        setErrorMessage("");
+        setUploadStatus("로그인 확인 중...");
+        uploadUser = await signInWithGoogle();
+
+        const reloginEmail = String(uploadUser?.email || "").toLowerCase();
+        const reloginAdmin = ADMIN_EMAILS.includes(reloginEmail);
+        const reloginSchool = isSchoolEmail(reloginEmail);
+
+        if (!reloginAdmin && !reloginSchool) {
+          await signOutUser();
+          await ensureAnonymousAuth();
+          setUploadStatus("");
+          setErrorMessage(`업로드는 학교 계정(${SCHOOL_EMAIL_DOMAIN}) 또는 관리자 계정으로만 로그인할 수 있어요.`);
+          return;
+        }
+      } catch (error) {
+        console.error(error);
+        setUploadStatus("");
+        setErrorMessage("구글 로그인 중 문제가 생겼어요. 다시 시도해 주세요.");
+        return;
+      }
+    }
+
+    const uploadEmail = String(uploadUser?.email || "").toLowerCase();
+    const isAdminAccount = ADMIN_EMAILS.includes(uploadEmail);
+
+    const todayUploadCount = entries.filter(
+      (entry) =>
+        String(entry.authorEmail || "").toLowerCase() === uploadEmail &&
+        getKstDateKey(entry.createdAt) === getKstDateKey(Date.now())
+    ).length;
+
+    if (!isAdminAccount && todayUploadCount >= MAX_UPLOADS_PER_DAY) {
+      setUploadStatus("");
+      setErrorMessage(`학교 계정 1개당 하루 최대 ${MAX_UPLOADS_PER_DAY}번까지만 업로드할 수 있어요.`);
+      return;
+    }
+
     const uploadedPaths = [];
 
     try {
@@ -1421,7 +1495,8 @@ export default function App() {
       await uploadBytes(mainFileRef, uploadFile, {
         contentType: uploadFile.type || undefined,
         customMetadata: {
-          ownerUid: currentUser.uid,
+          ownerUid: uploadUser.uid,
+          ownerEmail: uploadEmail,
           entryId: entryRef.id,
           role: "main",
           originalName: uploadFile.name,
@@ -1441,7 +1516,8 @@ export default function App() {
         await uploadBytes(coverRef, coverFile, {
           contentType: coverFile.type || undefined,
           customMetadata: {
-            ownerUid: currentUser.uid,
+            ownerUid: uploadUser.uid,
+            ownerEmail: uploadEmail,
             entryId: entryRef.id,
             role: "cover",
             originalName: coverFile.name,
@@ -1464,7 +1540,8 @@ export default function App() {
             await uploadBytes(autoCoverRef, pdfCoverBlob, {
               contentType: "image/jpeg",
               customMetadata: {
-                ownerUid: currentUser.uid,
+                ownerUid: uploadUser.uid,
+                ownerEmail: uploadEmail,
                 entryId: entryRef.id,
                 role: "autoCover",
                 originalName: "auto_cover_first_page.jpg",
@@ -1492,7 +1569,8 @@ export default function App() {
         coverImageUrl: finalCoverUrl,
         likedBy: [],
         views: 0,
-        authorUid: currentUser.uid,
+        authorUid: uploadUser.uid,
+        authorEmail: uploadEmail,
         createdAt: Date.now(),
         filePath: mainFilePath,
         coverPath: finalCoverPath,
@@ -1609,20 +1687,36 @@ export default function App() {
     </div>
   );
 
-  const renderAdminButtons = (showUploadButton = false) => (
-    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+  const renderLoginButtons = (showUploadButton = false) => (
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        alignItems: "center",
+        flexWrap: "wrap",
+        justifyContent: "flex-end",
+      }}
+    >
       {isAdminUser(currentUser) ? (
         <>
           <div className="grade-pill">관리자</div>
-          <button className="ghost-button" onClick={handleAdminLogout}>
+          <button className="ghost-button" onClick={handleLogout}>
+            로그아웃
+          </button>
+        </>
+      ) : isSchoolAccountUser(currentUser) ? (
+        <>
+          <div className="grade-pill">학교 계정</div>
+          <button className="ghost-button" onClick={handleLogout}>
             로그아웃
           </button>
         </>
       ) : (
-        <button className="ghost-button" onClick={handleAdminLogin}>
-          관리자 로그인
+        <button className="ghost-button" onClick={handleLogin}>
+          로그인
         </button>
       )}
+
       {showUploadButton ? (
         <button className="ghost-button" onClick={openUploadPage}>
           업로드
@@ -1642,12 +1736,12 @@ export default function App() {
               <div className="brand-subtitle">탐구 자료 공유 공간</div>
             </div>
           </div>
-          {renderAdminButtons(false)}
+          {renderLoginButtons(true)}
         </div>
 
         <div className="headline-box">
           <h2>
-            학년별 탐구 자료를 
+            학년별 탐구 자료를
             <br />
             한곳에서 찾아보세요
           </h2>
@@ -1732,7 +1826,7 @@ export default function App() {
               <div className="brand-subtitle">{selectedGrade}학년 아카이브</div>
             </div>
           </div>
-          {renderAdminButtons(true)}
+          {renderLoginButtons(true)}
         </div>
 
         <div className="page-header-row">
@@ -1805,7 +1899,11 @@ export default function App() {
 
         <div className="headline-box">
           <h2>성과 자료 등록</h2>
-          <p>학번, 이름, 탐구주제, 설명을 입력하고 파일을 올리면 목록에 바로 반영됩니다.</p>
+          <p>첫 화면에서 미리 로그인할 수 있고, 업로드는 학교 계정 또는 관리자 계정으로만 가능합니다.</p>
+          <div className="subtle-note">
+            학교 계정({SCHOOL_EMAIL_DOMAIN}) 또는 관리자 계정으로 로그인해 주세요.
+            학교 계정은 하루 최대 {MAX_UPLOADS_PER_DAY}회 업로드할 수 있습니다.
+          </div>
         </div>
 
         <div className="field-group">
@@ -1925,9 +2023,9 @@ export default function App() {
           <button
             className="footer-button primary"
             onClick={handleSubmit}
-            disabled={isSaving || !authReady || !currentUser}
+            disabled={isSaving || !authReady}
           >
-            {isSaving ? "등록 중" : !authReady || !currentUser ? "사용자 준비 중..." : "확인"}
+            {isSaving ? "업로드 중" : !authReady ? "페이지 준비 중..." : "업로드하기"}
           </button>
         </div>
       </div>
@@ -1970,6 +2068,9 @@ export default function App() {
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               {isAdminUser(currentUser) ? <div className="grade-pill">관리자</div> : null}
+              {isSchoolAccountUser(currentUser) && !isAdminUser(currentUser) ? (
+                <div className="grade-pill">학교 계정</div>
+              ) : null}
               <div className="grade-pill">상세</div>
             </div>
           </div>
@@ -2084,27 +2185,26 @@ export default function App() {
             <h1 className="hero-title">
               강원과학고 학생들의 탐구 성과를
               <br />
-              기록하고 공유하는 아카이브
+              기록하고 나누는 공간
             </h1>
 
             <div className="hero-description">
-              강원과학고 학생들이 만든 탐구 자료를 함께 보고, 찾고, 공유할 수 있도록 정리한 공간입니다.
+              학년별 자료를 정리해 보고, 전체 검색으로 필요한 탐구 기록을 빠르게 찾을 수 있습니다.
+              업로드와 삭제는 로그인 상태에 따라 바로 처리할 수 있어요.
             </div>
 
             <div className="feature-list">
               <div className="feature-card">
-                <strong>학년별 탐색 + 통합 검색</strong>
-                <span>1학년, 2학년, 3학년 자료를 나눠서 볼 수 있고, 홈에서는 전체 자료를 한 번에 찾아볼 수 있습니다.</span>
+                <strong>학년별 정리</strong>
+                <span>1학년, 2학년, 3학년 자료를 나누어 모아볼 수 있습니다.</span>
               </div>
-
               <div className="feature-card">
-                <strong>학기말 인기 자료 선정</strong>
-                <span>학기말마다 학생 투표를 통해 우수 자료를 선정하고, 1등·2등·3등에게 작은 상품을 전달하는 방식으로 공유를 더 즐겁게 이어갈 수 있습니다.</span>
+                <strong>통합 검색</strong>
+                <span>이름, 학번, 주제, 설명, 해시태그로 전체 자료를 한 번에 찾을 수 있습니다.</span>
               </div>
-
               <div className="feature-card">
-                <strong>문의 및 오류 제보</strong>
-                <span>이 페이지는 2101 강동헌이 제작했습니다. 사용 중 문제가 생기거나 수정이 필요하면 알려주시면 빠르게 반영하겠습니다.</span>
+                <strong>로그인 후 바로 관리</strong>
+                <span>첫 화면에서 로그인 후 업로드와 삭제를 더 편하게 할 수 있습니다.</span>
               </div>
             </div>
           </div>
